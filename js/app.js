@@ -1974,10 +1974,9 @@
   function shell(o, name) {
     const top = o.back
       ? '<header class="bar"><button class="ib" data-act="back" aria-label="رجوع">' + icon('back') + '</button><h1>' + esc(o.title) + '</h1><span class="grow"></span>' + (o.topRight || '') + '</header>'
-      : '<header class="bar brand"><img src="icons/logo.svg" alt=""><div class="brand-wrap"><h1>' + (o.title && name !== 'home' ? esc(o.title) : 'يعقوب') + '</h1></div><span class="grow"></span>' +
+      : '<header class="bar brand"><img src="icons/logo.svg" alt=""><div class="brand-wrap"><h1>' + (o.title && name !== 'home' ? esc(o.title) : 'يعقوب') + '</h1><a class="brand-credit" href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Developed by Nader Elsayed</a></div><span class="grow"></span>' +
       '<a class="ib layla-ib" href="#/layla" aria-label="ليلة"><img src="icons/layla.svg" alt=""></a><a class="ib" href="#/settings" aria-label="الإعدادات">' + icon('gear') + '</a></header>';
-    const footer = '<footer class="app-footer"><span>Developed by <a href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Nader Elsayed</a></span></footer>';
-    return top + '<main class="' + (o.cls || '') + '">' + o.html + '</main>' + (o.nav === false ? '' : navHtml(name)) + footer;
+    return top + '<main class="' + (o.cls || '') + '">' + o.html + '</main>' + (o.nav === false ? '' : navHtml(name));
   }
   let lastHash = '';
   function render() {
