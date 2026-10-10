@@ -998,8 +998,7 @@
         '<div class="panel"><h3>عام</h3><div class="field" style="margin:0"><label for="s_c">المدينة الافتراضية</label><input id="s_c" list="cities" value="' + esc(s.default_city) + '"></div>' +
         '<datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist></div>' +
         '<div class="btnrow"><button class="btn" data-act="savesettings">حفظ الإعدادات</button><button class="btn ghost" data-act="logout">' + icon('logout') + ' تسجيل خروج</button></div>' +
-        '<p class="muted small" style="margin-top:18px">لتثبيت التطبيق: من قائمة المتصفح اختار «إضافة إلى الشاشة الرئيسية».</p>' +
-        '<div class="muted small" style="margin-top:16px; text-align:center; opacity:.85;">Developed by <strong>Nader Elsayed</strong> · <a href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Portfolio</a></div>',
+        '<p class="muted small" style="margin-top:18px">لتثبيت التطبيق: من قائمة المتصفح اختار «إضافة إلى الشاشة الرئيسية».</p>',
       after() {
         pushState().then(st => { const el = $('#pushpanel'); const h = pushPanelHtml(st); if (el && h) { el.innerHTML = h; el.style.display = ''; } });
         api.listMemory().then(rows => {
@@ -1963,7 +1962,7 @@
     const tab = { home: 'home', appts: 'appts', clients: 'clients', client: 'clients', stats: 'stats', visit: 'appts', layla: 'layla', settings: 'settings' }[name];
     const on = t => tab === t ? ' class="on"' : '';
     const n = computeAlerts().length;
-    return '<nav class="nav"><div class="side-brand"><img src="icons/logo.svg" alt=""><div><b>يعقوب</b><small>YAQOUB</small></div></div>' +
+    return '<nav class="nav"><div class="side-brand"><img src="icons/logo.svg" alt=""><div><b>يعقوب</b><small>YAQOUB</small><a class="brand-link" href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Nader Elsayed</a></div></div>' +
       '<a href="#/home"' + on('home') + '>' + icon('home') + '<span>الرئيسية</span>' + (n ? '<i class="badge">' + n + '</i>' : '') + '</a>' +
       '<a href="#/appts"' + on('appts') + '>' + icon('calendar') + '<span>المواعيد</span></a>' +
       '<a class="fab" href="#/add" aria-label="إضافة">' + icon('plus') + '<span>إضافة</span></a>' +
@@ -1975,7 +1974,7 @@
   function shell(o, name) {
     const top = o.back
       ? '<header class="bar"><button class="ib" data-act="back" aria-label="رجوع">' + icon('back') + '</button><h1>' + esc(o.title) + '</h1><span class="grow"></span>' + (o.topRight || '') + '</header>'
-      : '<header class="bar brand"><img src="icons/logo.svg" alt=""><h1>' + (o.title && name !== 'home' ? esc(o.title) : 'يعقوب') + '</h1><span class="grow"></span>' +
+      : '<header class="bar brand"><img src="icons/logo.svg" alt=""><div class="brand-wrap"><h1>' + (o.title && name !== 'home' ? esc(o.title) : 'يعقوب') + '</h1><a class="brand-credit" href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Developed by Nader Elsayed</a></div><span class="grow"></span>' +
       '<a class="ib layla-ib" href="#/layla" aria-label="ليلة"><img src="icons/layla.svg" alt=""></a><a class="ib" href="#/settings" aria-label="الإعدادات">' + icon('gear') + '</a></header>';
     return top + '<main class="' + (o.cls || '') + '">' + o.html + '</main>' + (o.nav === false ? '' : navHtml(name));
   }
