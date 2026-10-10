@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>توليد مفاتيح الإشعارات</title>
+<style>
+  body{font-family:system-ui,'Segoe UI',Tahoma,sans-serif;max-width:640px;margin:30px auto;padding:0 16px;color:#1E2A44;line-height:1.7}
+  h1{color:#0B1F5C} button{background:#FF6600;color:#fff;border:0;border-radius:10px;padding:12px 22px;font-size:17px;font-weight:700;cursor:pointer}
+  code,textarea{direction:ltr;display:block;width:100%;box-sizing:border-box;background:#F5F7FA;border:1px solid #DFE4EE;border-radius:8px;padding:10px;font-size:13px;word-break:break-all}
+  .warn{background:#FFEBDD;border-radius:10px;padding:10px 14px}
+</style>
+</head>
+<body>
+<h1>توليد مفاتيح الإشعارات (VAPID)</h1>
+<p>اضغط الزرار مرة واحدة. المفاتيح بتتولد على جهازك ومبتتبعتش لأي مكان.</p>
+<button id="go">ولّد المفاتيح</button>
+<div id="out" style="display:none">
+  <h3>1) المفتاح العام</h3>
+  <p>حطه في <b>js/config.js</b> مكان <code style="display:inline;padding:2px 6px">VAPID_PUBLIC_KEY</code>، وفي Secrets باسم <b>VAPID_PUBLIC_KEY</b>:</p>
+  <textarea id="pub" rows="3" readonly></textarea>
+  <h3>2) المفتاح الخاص</h3>
+  <p class="warn">سرّي! حطه في Secrets بس باسم <b>VAPID_PRIVATE_KEY</b>. متحطوش في config.js ولا تبعته لحد.</p>
+  <textarea id="priv" rows="2" readonly></textarea>
+</div>
+<script>
+const b64u = b => { let s=''; new Uint8Array(b).forEach(x => s += String.fromCharCode(x)); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); };
+const unb = s => { s = s.replace(/-/g,'+').replace(/_/g,'/'); while (s.length % 4) s += '='; const bin = atob(s); return Uint8Array.from(bin, c => c.charCodeAt(0)); };
+document.getElementById('go').onclick = async () => {
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+  const x = unb(jwk.x), y = unb(jwk.y);
+  const pub = new Uint8Array(65); pub[0] = 4; pub.set(x, 1); pub.set(y, 33);
+  document.getElementById('pub').value = b64u(pub);
+  document.getElementById('priv').value = jwk.d;
+  document.getElementById('out').style.display = 'block';
+};
+</script>
+</body>
+</html>
