@@ -998,7 +998,8 @@
         '<div class="panel"><h3>عام</h3><div class="field" style="margin:0"><label for="s_c">المدينة الافتراضية</label><input id="s_c" list="cities" value="' + esc(s.default_city) + '"></div>' +
         '<datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist></div>' +
         '<div class="btnrow"><button class="btn" data-act="savesettings">حفظ الإعدادات</button><button class="btn ghost" data-act="logout">' + icon('logout') + ' تسجيل خروج</button></div>' +
-        '<p class="muted small" style="margin-top:18px">لتثبيت التطبيق: من قائمة المتصفح اختار «إضافة إلى الشاشة الرئيسية».</p>',
+        '<p class="muted small" style="margin-top:18px">لتثبيت التطبيق: من قائمة المتصفح اختار «إضافة إلى الشاشة الرئيسية».</p>' +
+        '<div class="muted small" style="margin-top:16px; text-align:center; opacity:.85;">Developed by <strong>Nader Elsayed</strong> · <a href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Portfolio</a></div>',
       after() {
         pushState().then(st => { const el = $('#pushpanel'); const h = pushPanelHtml(st); if (el && h) { el.innerHTML = h; el.style.display = ''; } });
         api.listMemory().then(rows => {

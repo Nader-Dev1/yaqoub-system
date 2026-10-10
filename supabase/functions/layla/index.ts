@@ -378,8 +378,16 @@ function missingKey(): string | null {
    الخدمة
    ========================================================= */
 Deno.serve(async (req: Request) => {
+  // Allow browser preflight requests before any auth/key validation.
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+  // Helpful health check for manual browser testing. Real API still requires POST.
+  if (req.method === 'GET') {
+    return json({ ok: true, service: 'yaqoub-layla', provider: PROVIDER, message: 'Edge Function is running' }, 200);
+  }
+
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+
   const mk = missingKey();
   if (mk) return json({ error: 'مفتاح ' + mk + ' مش متضبط على السيرفر (Edge Functions > Secrets)' }, 500);
 
