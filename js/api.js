@@ -139,8 +139,8 @@
       const row = must(await sb.from('layla_chat').select('messages').maybeSingle());
       return row ? row.messages : null;
     },
-    async saveChat(messages) {
-      must(await sb.from('layla_chat').upsert({messages:messages.slice(-40),updated_at:new Date().toISOString()},{onConflict:'owner'}));
+    async saveChat(messages, owner) {
+      must(await sb.from('layla_chat').upsert({owner, messages:messages.slice(-40),updated_at:new Date().toISOString()},{onConflict:'owner'}));
     },
     // ---------- ليلة ----------
     async layla(messages, digest) {
