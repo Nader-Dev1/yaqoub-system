@@ -1,5 +1,5 @@
 // Service worker بسيط: يخلي التطبيق يفتح حتى لو النت ضعيف
-const CACHE = 'yaqoub-v5';
+const CACHE = 'yaqoub-v6-layla';
 const SHELL = ['./', 'index.html', 'css/styles.css', 'js/config.js', 'js/catalog.js', 'js/api.js', 'js/offline.js', 'js/excel.js', 'js/app.js',
   'icons/logo.svg', 'icons/layla.svg', 'icons/icon.svg', 'manifest.webmanifest'];
 
