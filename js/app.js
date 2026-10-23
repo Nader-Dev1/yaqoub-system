@@ -844,9 +844,10 @@
   function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY + ':' + S.user.id) || '[]'); } catch (e) { return []; } }
   let chatSaveQueue = Promise.resolve();
   function saveChat() {
+    const owner = S.user.id;
     const messages = JSON.parse(JSON.stringify(S.chat.slice(-40)));
     try { localStorage.setItem(CHAT_KEY + ':' + S.user.id, JSON.stringify(messages)); } catch (e) {}
-    chatSaveQueue = chatSaveQueue.catch(() => {}).then(() => api.saveChat(messages)).catch(() => {
+    chatSaveQueue = chatSaveQueue.catch(() => {}).then(() => api.saveChat(messages, owner)).catch(() => {
       const status = $('#layla-status'); if (status) status.textContent = 'المحادثة محفوظة على الجهاز؛ المزامنة تحتاج إنترنت';
     });
   }
@@ -924,7 +925,8 @@
     const x = d.data || {};
     const cname = id => (S.cmap.get(id) || {}).name;
     let title = '', lines = [];
-    if (d.type === 'branch') { title = 'فرع جديد'; lines = [cname(x.client_id),x.name,x.city,x.address];
+    if (d.type === 'visit') { title='تسجيل مشكلة / زيارة تمت'; lines=[cname(x.client_id), (S.branches.find(b=>b.id===x.branch_id)||{}).name,x.problem,x.description,x.cause,x.resolution,x.resolved===true?'تم الحل':'المشكلة لسه مفتوحة'];
+    } else if (d.type === 'branch') { title = 'فرع جديد'; lines = [cname(x.client_id),x.name,x.city,x.address];
     } else if (d.type === 'client') {
       title = 'عميل جديد';
       lines = [x.name, '+' + normPhone(x.phone, '966'), x.city || S.settings.default_city];
@@ -979,6 +981,16 @@
 
   async function applyDraft(d) {
     const x = d.data || {};
+    if (d.type === 'visit') {
+      if(!S.cmap.has(x.client_id))throw new Error('العميل غير موجود');
+      if(x.branch_id&&!S.branches.some(b=>b.id===x.branch_id&&b.client_id===x.client_id))throw new Error('الفرع غير صحيح');
+      const at=x.at?new Date(x.at):new Date();if(isNaN(at))throw new Error('وقت الزيارة غير صحيح');
+      const saved=await api.saveVisit({client_id:x.client_id,branch_id:x.branch_id||null,status:'done',kind:'fault',
+        category:x.category||null,at:at.toISOString(),problem:x.problem||null,description:x.description||null,
+        cause:x.cause||null,device_name:x.device_name||null,resolution:x.resolution||null,resolved:x.resolved===true,
+        notes:x.notes||null});
+      upsertVisit(saved);return 'اتسجلت المشكلة وحالتها في سجل العميل. هقدر أرجع للحل في المرات الجاية.';
+    }
     if (d.type === 'branch') {
       if (!S.cmap.has(x.client_id)) throw new Error('حدد العميل الأول');
       const saved = await api.saveBranch(x); S.branches.push(saved); return 'اتحفظ الفرع «' + saved.name + '».';
