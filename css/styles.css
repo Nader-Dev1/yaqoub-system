@@ -39,7 +39,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: 'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+  font-family: 'Cairo', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
   font-size: 16px;
   line-height: 1.55;
   min-height: 100vh;
@@ -532,3 +532,29 @@ details.more[open] { padding-bottom: 6px; }
 .tag.urgent { background: var(--orange-100); color: #D95500; }
 .tag.emergency { background: var(--red-100); color: var(--red); }
 .subhead { font-size: 14px; font-weight: 700; color: var(--navy-900); margin: 4px 0 8px; }
+
+/* Layla workspace: readable Arabic, conversational controls and branch cards. */
+.layla-plus{max-width:960px;margin:auto;padding:20px 22px 230px}
+.layla-hero{display:flex;gap:16px;align-items:center;padding:22px;border-radius:24px;background:linear-gradient(125deg,#122a60,#234a8e);color:#fff;margin-bottom:16px}
+.layla-hero>img{width:58px;height:58px;background:#fff1;border:1px solid #fff3;border-radius:20px;padding:8px}
+.layla-hero h2{font-size:24px;margin:0 0 4px}.layla-hero p{font-size:14px;line-height:1.9;margin:0;color:#e0eaff}
+.layla-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.layla-tools button,.layla-tools a{font:inherit;font-size:13px;border:1px solid #c9d6e8;background:#fff;color:#173566;border-radius:30px;padding:8px 14px;text-decoration:none;cursor:pointer}
+.layla-tools button[aria-pressed=true]{background:#173566;color:#fff}.layla-tools button:disabled{opacity:.45;cursor:not-allowed}
+.layla-status{font-size:12px;line-height:1.9;color:#53657b;margin:12px 4px}
+.layla-plus .chat{display:flex;flex-direction:column;gap:20px;padding:10px 0 20px}
+.layla-plus .msg{max-width:90%;font-family:'Cairo',Tahoma,sans-serif;font-size:16px;line-height:2.05;align-items:flex-start}
+.layla-plus .msg .bub{padding:16px 20px;border-radius:20px;overflow-wrap:anywhere;box-shadow:0 3px 14px #152c4d08}
+.layla-plus .msg.a .bub{background:var(--card,#fff);color:var(--text,#20324d);border:1px solid #dce5f0}
+.layla-plus .msg.u .bub{background:#183b70;color:#fff;border:0}
+.layla-plus .msg .mav{width:32px;height:32px;border-radius:12px}
+.layla-plus .composer{max-width:960px;padding:12px 20px max(16px,env(safe-area-inset-bottom));background:var(--bg,#f5f7fb);border-top:1px solid #dce5f0}
+.layla-plus .cbox{border-radius:22px;background:var(--card,#fff);border:1px solid #c4d1e3;padding:9px;box-shadow:0 6px 28px #15355e12;align-items:flex-end}
+.layla-plus #cin{font-family:'Cairo',Tahoma,sans-serif;font-size:16px;line-height:1.8;min-height:48px;max-height:160px}
+.layla-plus .send{width:46px;height:46px;border-radius:16px;background:#ef7d12}
+.layla-plus .voice-note{display:block;color:#66768a;font-size:10px;line-height:1.8;margin:8px 5px 0}
+.layla-plus .qchips{gap:7px;padding-bottom:10px}.layla-plus .qchips button{font:inherit;font-size:12px;border-radius:22px;padding:6px 12px;white-space:nowrap}
+.branch-card{border:1px solid #dbe4ef;border-radius:18px;padding:16px;margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card,#fff)}
+.branch-card p{margin:5px 0;font-size:13px;color:#66768a}.branch-card small{color:#66768a}.branch-card .btnrow{margin:0}
+.layla-plus button:focus-visible,.branch-card button:focus-visible{outline:3px solid #ef7d12;outline-offset:3px}
+@media(max-width:600px){.layla-plus{padding:14px 12px 245px}.layla-hero{padding:18px;border-radius:20px}.layla-hero h2{font-size:21px}.layla-plus .msg{max-width:96%;font-size:15px}.layla-plus .msg .bub{padding:13px 15px}.layla-plus .composer{padding-right:12px;padding-left:12px}.branch-card{align-items:stretch;flex-direction:column}}
