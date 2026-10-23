@@ -562,6 +562,20 @@
     return { title: 'العميل', back: true, html };
   };
 
+
+  V.branch = p => {
+    const b=S.branches.find(x=>x.id===p[0]);if(!b)return notFound();
+    const client=S.cmap.get(b.client_id);if(!client)return notFound();
+    const vs=S.visits.filter(v=>v.branch_id===b.id);
+    const maps=b.lat!=null&&b.lng!=null?'https://www.google.com/maps?q='+b.lat+','+b.lng:b.map_url;
+    return {title:b.name,back:true,html:
+      '<section class="panel"><a href="#/client/'+client.id+'">'+esc(client.name)+'</a><h2>'+esc(b.name)+'</h2><p>'+esc([b.city,b.address].filter(Boolean).join('، '))+'</p>'+
+      (b.note?'<p>'+esc(b.note)+'</p>':'')+'<div class="btnrow"><a class="btn" href="#/form/done?client='+client.id+'&branch='+b.id+'">سجل زيارة للفرع</a>'+
+      (maps?'<a class="btn ghost" href="'+esc(maps)+'" target="_blank" rel="noopener">الموقع</a>':'')+
+      '<button class="btn ghost" data-act="editbranch" data-id="'+b.id+'">تعديل الفرع</button></div></section>'+
+      '<section class="block"><h3>سجل الفرع — '+vs.length+' زيارة</h3>'+(vs.length?'<div class="list">'+vs.map(v=>vrow(v,{day:true})).join('')+'</div>':emptyState('مفيش زيارات للفرع لسه','سجل أول زيارة من فوق.'))+'</section>'};
+  };
+
   /* ---------- صفحة زيارة ---------- */
   function kvRows(v) {
     const rows = [];
@@ -763,7 +777,7 @@
     const rows = branchesOf(client.id);
     return '<section class="block branches-block"><h3>الفروع <span class="count">' + rows.length + '</span></h3>' +
       '<p class="muted small">كل فرع له عنوان وموقع وسجل زيارات مستقل تحت نفس العميل.</p>' +
-      rows.map(b => '<article class="branch-card"><div><b>' + esc(b.name) + '</b><p>' + esc([b.city,b.address].filter(Boolean).join('، ')) + '</p><small>' +
+      rows.map(b => '<article class="branch-card"><div><a class="branch-title" href="#/branch/' + b.id + '"><b>' + esc(b.name) + '</b></a><p>' + esc([b.city,b.address].filter(Boolean).join('، ')) + '</p><small>' +
       S.visits.filter(v => v.branch_id === b.id).length + ' زيارة</small></div><div class="btnrow"><a class="btn sm" href="#/form/done?client=' + client.id + '&branch=' + b.id + '">سجل زيارة</a>' +
       '<button class="btn sm ghost" data-act="editbranch" data-id="' + b.id + '">تعديل</button></div></article>').join('') +
       '<button class="btn sm ghost" data-act="addbranch" data-id="' + client.id + '">+ إضافة فرع</button></section>';
@@ -1373,7 +1387,7 @@
     // --- العميل ---
     let clientBlock;
     if (fixedClient) {
-      clientBlock = '<div class="picked"><b>' + esc(client.name) + '</b><span class="muted small">' + esc(client.city || '') + '</span></div>';
+      clientBlock = '<div class="picked"><b>' + esc(client.name) + '</b><span class="muted small">' + esc(client.city || '') + '</span></div>' + branchSelectHtml(client.id,F.branchId);
     } else {
       clientBlock =
         '<div class="seg" style="margin-bottom:12px"><button data-act="cswitch" data-v="old" id="cs_old" class="on">عميل موجود</button><button data-act="cswitch" data-v="new" id="cs_new">عميل جديد</button></div>' +
