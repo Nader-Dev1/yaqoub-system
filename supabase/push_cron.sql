@@ -1,9 +1,5 @@
--- =====================================================================
--- جدولة الإشعارات: بتنادي دالة notify كل 10 دقايق
--- 1) فعّل الإضافتين: Database > Extensions > pg_cron و pg_net (Enable)
--- 2) غيّر <PROJECT_REF> و <NOTIFY_SECRET> تحت (نفس قيمة السر اللي حطيته في Secrets)
--- 3) شغّل الملف في SQL Editor
--- =====================================================================
+-- Run after setting NOTIFY_SECRET in Edge Function Secrets.
+-- Replace <PROJECT_REF> and <NOTIFY_SECRET> before executing.
 create extension if not exists pg_net;
 create extension if not exists pg_cron;
 
@@ -12,12 +8,9 @@ select cron.schedule(
   '*/10 * * * *',
   $$
   select net.http_post(
-    url     := 'https://nsqidtxbmhhdvsrwovjt.supabase.co/functions/v1/notify',
-    headers := jsonb_build_object('Content-Type', 'application/json', 'x-Aa100200300', '<NOTIFY_SECRET>'),
-    body    := '{}'::jsonb
+    url := 'https://<PROJECT_REF>.supabase.co/functions/v1/notify',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-notify-secret', '<NOTIFY_SECRET>'),
+    body := '{}'::jsonb
   );
   $$
 );
-
--- لإيقافها بعدين:   select cron.unschedule('yaqoub-notify');
--- لمشاهدة آخر تشغيلات:  select * from cron.job_run_details order by start_time desc limit 10;
