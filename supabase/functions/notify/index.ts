@@ -247,10 +247,10 @@ export function buildPrayerItems(now: Date, prayer: PrayerDay | null, city: stri
     const value = prayer.timings[key].slice(0, 5);
     const [hour, min] = value.split(':').map(Number);
     const at = hour * 60 + min;
-    // Short window prevents stale prayer alerts after an outage.
-    if (minute >= at && minute < at + 3) items.push({
+    // Existing ten-minute cron sends one advance reminder; never send a stale prayer alert.
+    if (minute >= at - 10 && minute < at) items.push({
       key: 'prayer:' + prayer.day + ':' + key, cooldownH: YEAR_H,
-      title: 'وقت صلاة ' + name + ' — الرياض',
+      title: 'تذكير بصلاة ' + name + ' — الرياض',
       body: name + ' الساعة ' + value + ' بتوقيت الرياض. مواقيت محسوبة بطريقة أم القرى.',
       url: '#/home', urgency: 'high', standalone: true, allowQuiet: true, ttl: 120,
     });
