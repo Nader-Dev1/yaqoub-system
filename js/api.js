@@ -117,7 +117,13 @@
       const { data, error } = await sb.functions.invoke('notify', { body: { test: true } });
       if (error) {
         let m = error.message;
-        try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) { /* تجاهل */ }
+        try {
+          const j = await error.context.json();
+          if (typeof j.error === 'string') m = j.error;
+          else if (j.error && typeof j.error.message === 'string') m = j.error.message;
+          else if (typeof j.message === 'string') m = j.message;
+          if (j.code) m += ' (' + j.code + ')';
+        } catch (e) { /* Network errors may not have a response body. */ }
         throw new Error(m);
       }
       return data;
@@ -128,7 +134,13 @@
       const { data, error } = await sb.functions.invoke('layla', { body: { messages, digest } });
       if (error) {
         let m = error.message;
-        try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) { /* تجاهل */ }
+        try {
+          const j = await error.context.json();
+          if (typeof j.error === 'string') m = j.error;
+          else if (j.error && typeof j.error.message === 'string') m = j.error.message;
+          else if (typeof j.message === 'string') m = j.message;
+          if (j.code) m += ' (' + j.code + ')';
+        } catch (e) { /* Network errors may not have a response body. */ }
         throw new Error(m);
       }
       return data;
