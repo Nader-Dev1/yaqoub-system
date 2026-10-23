@@ -933,7 +933,26 @@
     return arr;
   }
 
-  const fmtMsg = t => esc(String(t || '').replace(/(?:visit_id|client_id|branch_id)\s*=\s*[0-9a-f-]{36}/gi, '').trim()).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+  function fmtMsg(text) {
+    const safe=esc(String(text||'').replace(/(?:visit_id|client_id|branch_id)\s*=\s*[0-9a-f-]{36}/gi,'').trim());
+    const lines=safe.split('\n'),out=[];
+    const inline=t=>t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+    const cells=line=>line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());
+    let code=false;
+    for(let i=0;i<lines.length;i++){
+      const line=lines[i];
+      if(line.trim().startsWith('```')){out.push(code?'</code></pre>':'<pre class="chat-code"><code>');code=!code;continue;}
+      if(code){out.push(line+'\n');continue;}
+      if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])&&lines[i+1].includes('-')){
+        const heads=cells(line);i+=2;const rows=[];
+        while(i<lines.length&&lines[i].trim().startsWith('|')){rows.push(cells(lines[i]));i++;}
+        i--;out.push('<div class="chat-table"><table><thead><tr>'+heads.map(x=>'<th scope="col">'+inline(x)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(x=>'<td>'+inline(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');
+      }else if(/^\s*[-•]\s+/.test(line))out.push('<div class="chat-bullet">'+inline(line.replace(/^\s*[-•]\s+/,''))+'</div>');
+      else out.push(inline(line)+'<br>');
+    }
+    if(code)out.push('</code></pre>');
+    return out.join('');
+  }
 
   function draftCard(m, mi, d, di) {
     const x = d.data || {};
