@@ -9,6 +9,25 @@ const PROVIDER = (env('LAYLA_PROVIDER') ||
   (env('GEMINI_API_KEY') ? 'gemini' : env('LLM_API_KEY') ? 'openai' : env('ANTHROPIC_API_KEY') ? 'anthropic' : 'gemini')).toLowerCase();
 const DAILY_LIMIT = Number(env('LAYLA_DAILY_LIMIT') || '150');
 
+// Bound every network request and the complete conversation below platform limits.
+async function boundedFetch(input: string | URL | Request, init: RequestInit = {}, signal?: AbortSignal): Promise<Response> {
+  const started = Date.now();
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const host = new URL(url).host;
+  const combined = AbortSignal.any([AbortSignal.timeout(30000), ...(signal ? [signal] : [])]);
+  try {
+    const response = await fetch(input, { ...init, signal: combined });
+    // Include body consumption in the timeout; SDK callers can still read the returned response.
+    const body = await response.arrayBuffer();
+    console.info(JSON.stringify({ event: 'upstream', host, status: response.status, ms: Date.now() - started }));
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'upstream_failed', host, ms: Date.now() - started, timeout: combined.aborted }));
+    if (combined.aborted) throw new ApiError(504, 'الخدمة اتأخرت في الرد. جرّب تاني بعد شوية.');
+    throw error;
+  }
+}
+
 class ApiError extends Error {
   status: number;
   constructor(status: number, msg: string) { super(msg); this.status = status; }
@@ -281,15 +300,15 @@ interface Chat { step(system: string): Promise<Step>; addResults(r: Result[]): v
 const safeJson = (t: string) => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
 const clip = (o: unknown) => JSON.stringify(o).slice(0, 12000);
 
-function anthropicChat(history: any[]): Chat {
+function anthropicChat(history: any[], signal: AbortSignal): Chat {
   const msgs = history.slice();
   return {
     async step(system) {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
+      const r = await boundedFetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': env('ANTHROPIC_API_KEY'), 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: env('CLAUDE_MODEL') || 'claude-haiku-5-5', max_tokens: 1500, system, tools: TOOLS, messages: msgs }),
-      });
+      }, signal);
       if (!r.ok) throw new ApiError(r.status, (await r.text()).slice(0, 300));
       const res = await r.json();
       const calls = (res.content ?? []).filter((b: any) => b.type === 'tool_use').map((b: any) => ({ id: b.id, name: b.name, args: b.input ?? {} }));
@@ -303,13 +322,13 @@ function anthropicChat(history: any[]): Chat {
   };
 }
 
-function geminiChat(history: any[]): Chat {
+function geminiChat(history: any[], signal: AbortSignal): Chat {
   const contents: any[] = history.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
   return {
     async step(system) {
       // اسم الموديل بيتغير من وقت للتاني. انسخ الاسم الحالي من Google AI Studio وحطه في GEMINI_MODEL لو احتجت
       const model = env('GEMINI_MODEL') || 'gemini-flash-latest';
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      const r = await boundedFetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': env('GEMINI_API_KEY') },
         body: JSON.stringify({
@@ -318,7 +337,7 @@ function geminiChat(history: any[]): Chat {
           tools: [{ functionDeclarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.input_schema })) }],
           generationConfig: { maxOutputTokens: 1500 },
         }),
-      });
+      }, signal);
       if (!r.ok) throw new ApiError(r.status, (await r.text()).slice(0, 300));
       const res = await r.json();
       const parts: any[] = res.candidates?.[0]?.content?.parts ?? [];
@@ -334,12 +353,12 @@ function geminiChat(history: any[]): Chat {
   };
 }
 
-function openaiChat(history: any[]): Chat {
+function openaiChat(history: any[], signal: AbortSignal): Chat {
   const msgs: any[] = history.slice();
   return {
     async step(system) {
       const base = (env('LLM_BASE_URL') || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
-      const r = await fetch(base + '/chat/completions', {
+      const r = await boundedFetch(base + '/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env('LLM_API_KEY') },
         body: JSON.stringify({
@@ -348,7 +367,7 @@ function openaiChat(history: any[]): Chat {
           tools: TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })),
           max_tokens: 1500,
         }),
-      });
+      }, signal);
       if (!r.ok) throw new ApiError(r.status, (await r.text()).slice(0, 300));
       const res = await r.json();
       const m = res.choices?.[0]?.message ?? {};
@@ -362,10 +381,10 @@ function openaiChat(history: any[]): Chat {
   };
 }
 
-function makeChat(history: any[]): Chat {
-  if (PROVIDER === 'anthropic') return anthropicChat(history);
-  if (PROVIDER === 'openai') return openaiChat(history);
-  return geminiChat(history);
+function makeChat(history: any[], signal: AbortSignal): Chat {
+  if (PROVIDER === 'anthropic') return anthropicChat(history, signal);
+  if (PROVIDER === 'openai') return openaiChat(history, signal);
+  return geminiChat(history, signal);
 }
 function missingKey(): string | null {
   if (PROVIDER === 'anthropic' && !env('ANTHROPIC_API_KEY')) return 'ANTHROPIC_API_KEY';
@@ -391,9 +410,11 @@ Deno.serve(async (req: Request) => {
   const mk = missingKey();
   if (mk) return json({ error: 'مفتاح ' + mk + ' مش متضبط على السيرفر (Edge Functions > Secrets)' }, 500);
 
+  const signal = AbortSignal.timeout(100000);
+  try {
   const auth = req.headers.get('Authorization') ?? '';
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-    global: { headers: { Authorization: auth } },
+    global: { headers: { Authorization: auth }, fetch: (input, init) => boundedFetch(input, init, signal) },
   });
   const { data: u } = await sb.auth.getUser();
   if (!u?.user) return json({ error: 'سجّل دخول الأول' }, 401);
@@ -417,7 +438,6 @@ Deno.serve(async (req: Request) => {
   if (used >= DAILY_LIMIT) return json({ error: 'خلصت رسايل النهارده (' + DAILY_LIMIT + '). كمّل بكرة أو زوّد الحد من إعدادات السيرفر' }, 429);
   await sb.from('layla_usage').upsert({ day: today, n: used + 1 }, { onConflict: 'owner,day' });
 
-  try {
     const [settings, memory] = await Promise.all([
       sb.from('settings').select('about_me').maybeSingle(),
       sb.from('layla_memory').select('id,fact').order('created_at', { ascending: false }).limit(60),
@@ -426,7 +446,7 @@ Deno.serve(async (req: Request) => {
 
     const drafts: any[] = [];
     const ctx = { sb, drafts };
-    const chat = makeChat(messages);
+    const chat = makeChat(messages, signal);
     let reply = '';
     for (let i = 0; i < 6; i++) {
       const st = await chat.step(system);
@@ -443,6 +463,7 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     console.error(e);
     const st = (e as ApiError).status;
+    if (st === 504) return json({ error: (e as Error).message }, 504);
     if (st === 429) return json({ error: 'ليلة وصلت للحد المجاني عند مزود الـ AI. جرّب بعد دقيقة.' }, 429);
     if (st === 401 || st === 403) return json({ error: 'مفتاح الـ AI غلط أو مش مفعّل. راجع الـ Secrets.' }, 502);
     if (st === 404) return json({ error: 'اسم الموديل غلط أو مش متاح. راجع GEMINI_MODEL أو LLM_MODEL.' }, 502);
