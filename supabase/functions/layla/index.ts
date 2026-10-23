@@ -5,8 +5,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 // المزوّد: gemini (مجاني بمفتاح من Google AI Studio) | openai (أي مزود متوافق مع OpenAI زي Groq أو OpenRouter) | anthropic
 const env = (k: string) => Deno.env.get(k) ?? '';
-const PROVIDER = (env('LAYLA_PROVIDER') ||
-  (env('GEMINI_API_KEY') ? 'gemini' : env('LLM_API_KEY') ? 'openai' : env('ANTHROPIC_API_KEY') ? 'anthropic' : 'gemini')).toLowerCase();
+// A configured compatible API key takes priority during the authorized Groq migration.
+const PROVIDER = (env('LLM_API_KEY') ? 'openai' : env('LAYLA_PROVIDER') ||
+  (env('GEMINI_API_KEY') ? 'gemini' : env('ANTHROPIC_API_KEY') ? 'anthropic' : 'gemini')).toLowerCase();
 const DAILY_LIMIT = Number(env('LAYLA_DAILY_LIMIT') || '150');
 
 // Bound every network request and the complete conversation below platform limits.
@@ -362,7 +363,7 @@ function openaiChat(history: any[], signal: AbortSignal): Chat {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env('LLM_API_KEY') },
         body: JSON.stringify({
-          model: env('LLM_MODEL') || 'llama-3.3-70b-versatile',
+          model: env('LLM_MODEL') || 'openai/gpt-oss-120b',
           messages: [{ role: 'system', content: system }, ...msgs],
           tools: TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })),
           max_tokens: 1500,
