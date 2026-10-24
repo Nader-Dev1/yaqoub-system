@@ -105,13 +105,13 @@
     return '';
   }
   function parseLoc(text) {
-    const t = String(text || '').trim();
+    const t = String(text || '').trim().replace(/[−–]/g, '-');
     if (!t) return null;
     const urlm = t.match(/https?:\/\/\S+/);
     let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
       t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) ||
       t.match(/[?&](?:q|ll|query|destination)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i);
-    if (!m && !urlm) m = t.match(/(-?\d{1,3}\.\d+)\s*[,،\s]\s*(-?\d{1,3}\.\d+)/);
+    if (!m && !urlm) m = t.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,،\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
     let lat = null, lng = null;
     if (m) {
       lat = parseFloat(m[1]); lng = parseFloat(m[2]);
@@ -338,7 +338,7 @@
       const datalist = o.cities ? '<datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist>' : '';
       sheetEl.innerHTML = '<div class="backdrop" data-sheet-close></div>' +
         '<form class="sheet" autocomplete="off"><div class="grab"></div><h3>' + esc(o.title) + '</h3>' +
-        o.fields.map(fieldHtml).join('') + datalist +
+        o.fields.map(f => fieldHtml(f) + ((o.fieldExtras || {})[f.name] || '')).join('') + datalist +
         '<div class="btnrow">' + (o.danger ? '<button class="btn danger" type="button" data-sheet-danger>' + esc(o.danger) + '</button>' : '') +
         '<button class="btn ghost" type="button" data-sheet-close>إلغاء</button>' +
         '<button class="btn" type="submit">' + esc(o.submit || 'حفظ') + '</button></div></form>';
@@ -353,6 +353,7 @@
       });
       $$('[data-sheet-close]', sheetEl).forEach(b => b.addEventListener('click', () => done(null)));
       $$('[data-sheet-danger]', sheetEl).forEach(b => b.addEventListener('click', () => done({ __delete: true })));
+      if (o.onOpen) o.onOpen(form);
       const first = form.elements[o.fields[0].name];
       if (first && o.focus !== false) setTimeout(() => first.focus(), 60);
     });
@@ -788,12 +789,31 @@
       {name:'name',label:'اسم الفرع',required:true,value:b.name||''},
       {name:'city',label:'المدينة',value:b.city||S.settings.default_city||'الرياض'},
       {name:'address',label:'العنوان',value:b.address||''},
-      {name:'map',label:'رابط خرائط كامل أو إحداثيات',value:b.map_url || (b.lat != null && b.lng != null ? b.lat + ',' + b.lng : ''),hint:'الرابط المختصر وحده لا يكفي لحساب المسافة؛ استخدم الإحداثيات.'},
+      {name:'map',label:'رابط خرائط كامل أو إحداثيات',value:b.map_url || (b.lat != null && b.lng != null ? b.lat + ',' + b.lng : ''),hint:'الصق رابط Google Maps أو إحداثيات من مكان تاني، أو استخدم موقعك الحالي. الرابط المختصر يُحفظ لكن لا يكفي لحساب المسافة.'},
       {name:'phone',label:'رقم الفرع (اختياري)',type:'tel',value:b.phone||''},
       {name:'note',label:'ملاحظات الفرع',type:'textarea',value:b.note||''}
-    ]});
+    ], fieldExtras: {map: '<div class="branch-location-actions"><button type="button" class="btn sm ghost" data-branch-gps>استخدم موقعي الحالي</button><p class="muted small" data-branch-gps-status role="status">تحديد الموقع لا يحفظ الفرع إلا بعد الضغط على حفظ.</p></div>'},
+      onOpen(form) {
+        const button=form.querySelector('[data-branch-gps]'), status=form.querySelector('[data-branch-gps-status]');
+        const map=form.elements.map;map.dir='ltr';map.style.textAlign='left';
+        map.addEventListener('input',()=>{button.dataset.request='';status.textContent='راجع الموقع قبل الحفظ.';});
+        button.addEventListener('click',async()=>{
+          const request=String(Date.now());button.dataset.request=request;button.disabled=true;status.textContent='جاري تحديد موقعك…';
+          try{
+            const pos=await getPos();
+            if(!form.isConnected||button.dataset.request!==request)return;
+            map.value=pos.latitude.toFixed(6)+', '+pos.longitude.toFixed(6);
+            status.textContent='تم تحديد موقعك، دقة تقريبية '+Math.round(pos.accuracy)+' متر. راجع البيانات واضغط حفظ.';
+          }catch(e){if(form.isConnected&&button.dataset.request===request)status.textContent=e.message;}
+          finally{if(form.isConnected)button.disabled=false;}
+        });
+      }
+    });
     if (!r) return;
-    const loc = parseLoc(r.map||'');
+    let loc = parseLoc(r.map||'');
+    const oldMap=b.map_url || (b.lat != null && b.lng != null ? b.lat + ',' + b.lng : '');
+    if(r.map===oldMap&&b.lat!=null&&b.lng!=null)loc={...loc,lat:b.lat,lng:b.lng};
+    if(r.map&&!loc){toast('الموقع غير واضح؛ الصق رابط خرائط أو خط العرض، خط الطول.','err');return;}
     const saved = await api.saveBranch({id:b.id,client_id:clientId,name:r.name,city:r.city||null,address:r.address||null,
       phone:r.phone||null,note:r.note||null,lat:loc?.lat??null,lng:loc?.lng??null,map_url:loc?.url||null});
     const i=S.branches.findIndex(x=>x.id===saved.id); if(i<0)S.branches.push(saved);else S.branches[i]=saved;

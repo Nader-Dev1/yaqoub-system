@@ -565,3 +565,34 @@ details.more[open] { padding-bottom: 6px; }
 .layla-plus .chat-table th{background:#edf3fb;color:#173566}.layla-plus .chat-table tr:last-child td{border-bottom:0}
 .layla-plus .chat-bullet{padding-inline-start:16px;position:relative}.layla-plus .chat-bullet:before{content:"•";position:absolute;inset-inline-start:0;color:#ef7d12}
 .layla-plus .chat-code{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#eef2f7;border-radius:12px;font:13px/1.7 monospace}
+
+/* Compact desktop workspace; phone layout stays unchanged. */
+.branch-location-actions{margin:0 0 16px}.branch-location-actions p{margin-top:8px}
+@media(min-width:900px){
+ body{font-size:14px;line-height:1.65;font-style:normal}
+ body *{font-style:normal}
+ body.has-nav{padding-inline-start:196px}
+ body.has-nav main{max-width:920px;padding:18px 24px 32px}
+ body.has-nav .bar{padding-inline:24px;min-height:52px}
+ .nav{width:196px;padding:16px 10px;gap:3px}
+ .nav a,.nav button{height:42px;font-size:14px;gap:10px;padding:0 12px}
+ .nav .side-brand{padding:4px 8px 16px}.nav .side-brand img{width:34px;height:34px}.nav .side-brand b{font-size:20px}
+ .nav .fab{height:42px;margin-bottom:8px}
+ .bar h1{font-size:17px}
+ .hero{padding:16px 20px 20px;margin-top:0;border-radius:16px}.hero h2{font-size:23px}
+ .hero .acts{margin-top:12px}.hero .ib{width:40px;height:40px}
+ .pulse{gap:28px;margin-top:16px;padding-top:12px}.pulse b{font-size:20px}
+ .tiles{gap:10px;margin-bottom:18px}.tile{min-height:86px;padding:12px 14px;border-radius:13px}.tile b{font-size:27px}.tile span{font-size:13px}
+ .block{margin-bottom:20px}.block>h3{font-size:15px}
+ .row{padding:11px 12px;gap:10px}.row .t{font-size:14px}.row .s,.row .snip{font-size:12.5px}
+ .panel,.card-head{padding:14px;border-radius:12px}.card-head h2{font-size:19px}
+ .btn{min-height:42px;font-size:14px;padding:0 16px}.btn.sm{min-height:36px;font-size:13px;padding:0 12px}
+ input[type=text],input[type=tel],input[type=email],input[type=password],input[type=number],input[type=date],input[type=time],input[type=datetime-local],input[type=search],select,textarea{min-height:42px;padding:8px 10px;font-size:14px}
+ .field{margin-bottom:12px}.field>label,.lbl{font-size:13px}.two{gap:12px}
+ .sheet{max-width:520px}.sheet h3{font-size:18px}
+ main.layla-plus,.layla-plus .composer{max-width:800px}
+ main.layla-plus{padding:20px 24px 200px}
+ .layla-plus .layla-hero{padding:18px 20px;border-radius:18px}.layla-plus .layla-hero h2{font-size:21px}
+ .layla-plus .msg{font-size:15px;line-height:1.95}.layla-plus .msg .bub{padding:13px 16px;border-radius:16px}
+ .layla-plus #cin{font-size:15px;min-height:42px}
+}
