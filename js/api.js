@@ -16,7 +16,7 @@
 
   const CLIENT_FIELDS = ['name', 'phone', 'city', 'lat', 'lng', 'map_url', 'note', 'client_type', 'contact_name', 'contact_role',
     'address', 'email', 'work_hours', 'access_notes', 'tax_no', 'source'];
-  const VISIT_FIELDS = ['client_id', 'status', 'kind', 'category', 'at', 'arrived_at', 'finished_at',
+  const VISIT_FIELDS = ['branch_id', 'client_id', 'status', 'kind', 'category', 'at', 'arrived_at', 'finished_at',
     'description', 'notes', 'parent_visit_id', 'photos',
     'device_name', 'resolved', 'resolution', 'unresolved_reason', 'unresolved_note', 'follow_up_date',
     'insp_about', 'insp_needs', 'quote_sent', 'quote_sent_at', 'decision', 'reject_reason',
@@ -72,13 +72,14 @@
 
     // ---------- تحميل كل البيانات ----------
     async loadAll() {
-      const [clients, visits, contacts, settings] = await Promise.all([
+      const [clients, visits, contacts, settings, branches] = await Promise.all([
         fetchAll('clients', '*', 'name', true),
         fetchAll('visits', VISIT_COLS, 'at', false),
         fetchAll('client_contacts', '*', 'created_at', true).catch(() => []), // لو لسه ما شغلتش schema_v2
-        sb.from('settings').select('*').maybeSingle().then(must)
+        sb.from('settings').select('*').maybeSingle().then(must),
+        fetchAll('client_branches', '*', 'name', true)
       ]);
-      return { clients, visits, contacts, settings };
+      return { clients, visits, contacts, settings, branches };
     },
 
     // ---------- العملاء ----------
@@ -117,24 +118,48 @@
       const { data, error } = await sb.functions.invoke('notify', { body: { test: true } });
       if (error) {
         let m = error.message;
-        try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) { /* تجاهل */ }
+        try {
+          const j = await error.context.json();
+          if (typeof j.error === 'string') m = j.error;
+          else if (j.error && typeof j.error.message === 'string') m = j.error.message;
+          else if (typeof j.message === 'string') m = j.message;
+          if (j.code) m += ' (' + j.code + ')';
+        } catch (e) { /* Network errors may not have a response body. */ }
         throw new Error(m);
       }
       return data;
     },
 
+    async saveBranch(branch) {
+      const row = pick(branch, ['client_id','name','city','address','phone','note','lat','lng','map_url']);
+      if (branch.id) return must(await sb.from('client_branches').update(row).eq('id',branch.id).select().single());
+      return must(await sb.from('client_branches').insert(row).select().single());
+    },
+    async loadChat() {
+      const row = must(await sb.from('layla_chat').select('messages').maybeSingle());
+      return row ? row.messages : null;
+    },
+    async saveChat(messages, owner) {
+      must(await sb.from('layla_chat').upsert({owner, messages:messages.slice(-40),updated_at:new Date().toISOString()},{onConflict:'owner'}));
+    },
     // ---------- ليلة ----------
     async layla(messages, digest) {
       const { data, error } = await sb.functions.invoke('layla', { body: { messages, digest } });
       if (error) {
         let m = error.message;
-        try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) { /* تجاهل */ }
+        try {
+          const j = await error.context.json();
+          if (typeof j.error === 'string') m = j.error;
+          else if (j.error && typeof j.error.message === 'string') m = j.error.message;
+          else if (typeof j.message === 'string') m = j.message;
+          if (j.code) m += ' (' + j.code + ')';
+        } catch (e) { /* Network errors may not have a response body. */ }
         throw new Error(m);
       }
       return data;
     },
     async listMemory() {
-      return must(await sb.from('layla_memory').select('id,fact,created_at').order('created_at', { ascending: false }).limit(100));
+      return must(await sb.from('layla_memory').select('id,fact,client_id,created_at').order('created_at', { ascending: false }).limit(100));
     },
     async deleteMemory(id) {
       must(await sb.from('layla_memory').delete().eq('id', id));

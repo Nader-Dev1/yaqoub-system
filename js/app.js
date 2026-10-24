@@ -105,13 +105,13 @@
     return '';
   }
   function parseLoc(text) {
-    const t = String(text || '').trim();
+    const t = String(text || '').trim().replace(/[−–]/g, '-');
     if (!t) return null;
     const urlm = t.match(/https?:\/\/\S+/);
     let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
       t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) ||
       t.match(/[?&](?:q|ll|query|destination)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i);
-    if (!m && !urlm) m = t.match(/(-?\d{1,3}\.\d+)\s*[,،\s]\s*(-?\d{1,3}\.\d+)/);
+    if (!m && !urlm) m = t.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,،\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
     let lat = null, lng = null;
     if (m) {
       lat = parseFloat(m[1]); lng = parseFloat(m[2]);
@@ -133,7 +133,7 @@
      الحالة
      ===================================================== */
   const S = {
-    user: null, clients: [], visits: [], contacts: [], settings: Object.assign({}, DEFAULTS),
+    user: null, clients: [], visits: [], contacts: [], branches: [], location: null, settings: Object.assign({}, DEFAULTS),
     cmap: new Map(), vmap: new Map(), ctmap: new Map(),
     apptTab: 'up', cq: '', range: null, loadedAt: 0,
     chat: [], chatBusy: false, asked: new Set()
@@ -161,7 +161,7 @@
   }
   async function loadData() {
     const d = await api.loadAll();
-    S.clients = d.clients; S.visits = d.visits; S.contacts = d.contacts || [];
+    S.clients = d.clients; S.visits = d.visits; S.contacts = d.contacts || []; S.branches = d.branches || [];
     S.settings = Object.assign({}, DEFAULTS, d.settings || {});
     if (!S.settings.about_me) S.settings.about_me = DEFAULT_ABOUT;
     S.loadedAt = Date.now();
@@ -338,7 +338,7 @@
       const datalist = o.cities ? '<datalist id="cities">' + CITIES.map(c => '<option value="' + c + '">').join('') + '</datalist>' : '';
       sheetEl.innerHTML = '<div class="backdrop" data-sheet-close></div>' +
         '<form class="sheet" autocomplete="off"><div class="grab"></div><h3>' + esc(o.title) + '</h3>' +
-        o.fields.map(fieldHtml).join('') + datalist +
+        o.fields.map(f => fieldHtml(f) + ((o.fieldExtras || {})[f.name] || '')).join('') + datalist +
         '<div class="btnrow">' + (o.danger ? '<button class="btn danger" type="button" data-sheet-danger>' + esc(o.danger) + '</button>' : '') +
         '<button class="btn ghost" type="button" data-sheet-close>إلغاء</button>' +
         '<button class="btn" type="submit">' + esc(o.submit || 'حفظ') + '</button></div></form>';
@@ -353,6 +353,7 @@
       });
       $$('[data-sheet-close]', sheetEl).forEach(b => b.addEventListener('click', () => done(null)));
       $$('[data-sheet-danger]', sheetEl).forEach(b => b.addEventListener('click', () => done({ __delete: true })));
+      if (o.onOpen) o.onOpen(form);
       const first = form.elements[o.fields[0].name];
       if (first && o.focus !== false) setTimeout(() => first.focus(), 60);
     });
@@ -556,10 +557,24 @@
       '<a class="btn navy" href="#/form/appt?client=' + c.id + '">' + icon('calendar') + ' ميعاد جديد</a></div>' +
       '<div class="btnrow" style="margin:-8px 0 20px"><button class="btn sm ghost" data-act="geoclient" data-id="' + c.id + '">' + icon('pin') + ' حدّث موقعي الحالي للعميل</button>' +
       '<button class="btn sm danger" data-act="delclient" data-id="' + c.id + '">حذف العميل</button></div>' +
-      contactsBlock(c) +
+      branchesBlock(c) + contactsBlock(c) +
       '<section class="block"><h3>الزيارات <span class="count zero" style="background:var(--navy-900)">' + vs.length + '</span></h3>' +
       (vs.length ? '<div class="list">' + vs.map(v => vrow(v, { day: true })).join('') + '</div>' : emptyState('مفيش زيارات للعميل ده', 'ضيف أول زيارة من فوق.')) + '</section>';
     return { title: 'العميل', back: true, html };
+  };
+
+
+  V.branch = p => {
+    const b=S.branches.find(x=>x.id===p[0]);if(!b)return notFound();
+    const client=S.cmap.get(b.client_id);if(!client)return notFound();
+    const vs=S.visits.filter(v=>v.branch_id===b.id);
+    const maps=b.lat!=null&&b.lng!=null?'https://www.google.com/maps?q='+b.lat+','+b.lng:b.map_url;
+    return {title:b.name,back:true,html:
+      '<section class="panel"><a href="#/client/'+client.id+'">'+esc(client.name)+'</a><h2>'+esc(b.name)+'</h2><p>'+esc([b.city,b.address].filter(Boolean).join('، '))+'</p>'+
+      (b.note?'<p>'+esc(b.note)+'</p>':'')+'<div class="btnrow"><a class="btn" href="#/form/done?client='+client.id+'&branch='+b.id+'">سجل زيارة للفرع</a>'+
+      (maps?'<a class="btn ghost" href="'+esc(maps)+'" target="_blank" rel="noopener">الموقع</a>':'')+
+      '<button class="btn ghost" data-act="editbranch" data-id="'+b.id+'">تعديل الفرع</button></div></section>'+
+      '<section class="block"><h3>سجل الفرع — '+vs.length+' زيارة</h3>'+(vs.length?'<div class="list">'+vs.map(v=>vrow(v,{day:true})).join('')+'</div>':emptyState('مفيش زيارات للفرع لسه','سجل أول زيارة من فوق.'))+'</section>'};
   };
 
   /* ---------- صفحة زيارة ---------- */
@@ -568,6 +583,7 @@
     const add = (k, val) => { if (val !== null && val !== undefined && val !== '') rows.push('<div><dt>' + k + '</dt><dd>' + val + '</dd></div>'); };
     const at = new Date(v.at);
     add(v.status === 'scheduled' ? 'الميعاد' : 'الوقت', esc(relDay(at) + '، ' + dfTime.format(at)));
+    add('الفرع', esc((S.branches.find(b => b.id === v.branch_id) || {}).name));
     add('التصنيف', esc(v.category));
     if (v.priority && v.priority !== 'normal') add('الأولوية', '<em class="tag ' + v.priority + '">' + YQ.PRIORITIES[v.priority] + '</em>');
     add(v.status === 'scheduled' ? 'هقابل' : 'قابلت', esc(v.met_with));
@@ -749,10 +765,126 @@
   /* =====================================================
      ليلة
      ===================================================== */
+
+  const branchesOf = id => S.branches.filter(b => b.client_id === id);
+  function branchSelectHtml(clientId, selected) {
+    const rows = branchesOf(clientId);
+    if (!rows.length) return '';
+    return '<div class="field branch-picker"><label for="f_branch">فرع الزيارة</label><select id="f_branch"><option value="">العميل / الموقع الرئيسي</option>' +
+      rows.map(b => '<option value="' + b.id + '"' + (selected === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('') + '</select></div>';
+  }
+  document.addEventListener('change', e => { if (e.target.id === 'f_branch' && F) F.branchId = e.target.value; });
+  function branchesBlock(client) {
+    const rows = branchesOf(client.id);
+    return '<section class="block branches-block"><h3>الفروع <span class="count">' + rows.length + '</span></h3>' +
+      '<p class="muted small">كل فرع له عنوان وموقع وسجل زيارات مستقل تحت نفس العميل.</p>' +
+      rows.map(b => '<article class="branch-card"><div><a class="branch-title" href="#/branch/' + b.id + '"><b>' + esc(b.name) + '</b></a><p>' + esc([b.city,b.address].filter(Boolean).join('، ')) + '</p><small>' +
+      S.visits.filter(v => v.branch_id === b.id).length + ' زيارة</small></div><div class="btnrow"><a class="btn sm" href="#/form/done?client=' + client.id + '&branch=' + b.id + '">سجل زيارة</a>' +
+      '<button class="btn sm ghost" data-act="editbranch" data-id="' + b.id + '">تعديل</button></div></article>').join('') +
+      '<button class="btn sm ghost" data-act="addbranch" data-id="' + client.id + '">+ إضافة فرع</button></section>';
+  }
+  async function editBranch(clientId, branch) {
+    const b = branch || {};
+    const r = await askSheet({ title: branch ? 'تعديل الفرع' : 'فرع جديد', fields: [
+      {name:'name',label:'اسم الفرع',required:true,value:b.name||''},
+      {name:'city',label:'المدينة',value:b.city||S.settings.default_city||'الرياض'},
+      {name:'address',label:'العنوان',value:b.address||''},
+      {name:'map',label:'رابط خرائط كامل أو إحداثيات',value:b.map_url || (b.lat != null && b.lng != null ? b.lat + ',' + b.lng : ''),hint:'الصق رابط Google Maps أو إحداثيات من مكان تاني، أو استخدم موقعك الحالي. الرابط المختصر يُحفظ لكن لا يكفي لحساب المسافة.'},
+      {name:'phone',label:'رقم الفرع (اختياري)',type:'tel',value:b.phone||''},
+      {name:'note',label:'ملاحظات الفرع',type:'textarea',value:b.note||''}
+    ], fieldExtras: {map: '<div class="branch-location-actions"><button type="button" class="btn sm ghost" data-branch-gps>استخدم موقعي الحالي</button><p class="muted small" data-branch-gps-status role="status">تحديد الموقع لا يحفظ الفرع إلا بعد الضغط على حفظ.</p></div>'},
+      onOpen(form) {
+        const button=form.querySelector('[data-branch-gps]'), status=form.querySelector('[data-branch-gps-status]');
+        const map=form.elements.map;map.dir='ltr';map.style.textAlign='left';
+        map.addEventListener('input',()=>{button.dataset.request='';status.textContent='راجع الموقع قبل الحفظ.';});
+        button.addEventListener('click',async()=>{
+          const request=String(Date.now());button.dataset.request=request;button.disabled=true;status.textContent='جاري تحديد موقعك…';
+          try{
+            const pos=await getPos();
+            if(!form.isConnected||button.dataset.request!==request)return;
+            map.value=pos.latitude.toFixed(6)+', '+pos.longitude.toFixed(6);
+            status.textContent='تم تحديد موقعك، دقة تقريبية '+Math.round(pos.accuracy)+' متر. راجع البيانات واضغط حفظ.';
+          }catch(e){if(form.isConnected&&button.dataset.request===request)status.textContent=e.message;}
+          finally{if(form.isConnected)button.disabled=false;}
+        });
+      }
+    });
+    if (!r) return;
+    let loc = parseLoc(r.map||'');
+    const oldMap=b.map_url || (b.lat != null && b.lng != null ? b.lat + ',' + b.lng : '');
+    if(r.map===oldMap&&b.lat!=null&&b.lng!=null)loc={...loc,lat:b.lat,lng:b.lng};
+    if(r.map&&!loc){toast('الموقع غير واضح؛ الصق رابط خرائط أو خط العرض، خط الطول.','err');return;}
+    const saved = await api.saveBranch({id:b.id,client_id:clientId,name:r.name,city:r.city||null,address:r.address||null,
+      phone:r.phone||null,note:r.note||null,lat:loc?.lat??null,lng:loc?.lng??null,map_url:loc?.url||null});
+    const i=S.branches.findIndex(x=>x.id===saved.id); if(i<0)S.branches.push(saved);else S.branches[i]=saved;
+    toast('اتحفظ الفرع');render();
+  }
+  function nearbySites() {
+    if (!S.location) return [];
+    const rad = n => n * Math.PI / 180;
+    const distance = (a,b) => {
+      const x=Math.sin(rad(a-S.location.lat)/2)**2 + Math.cos(rad(S.location.lat))*Math.cos(rad(a))*Math.sin(rad(b-S.location.lng)/2)**2;
+      return 6371*2*Math.atan2(Math.sqrt(x),Math.sqrt(Math.max(0,1-x)));
+    };
+    const sites=[];
+    for(const c of S.clients) {
+      const rows=[{...c,label:c.name,client_id:c.id,branch_id:null},...branchesOf(c.id).map(b=>({...b,label:c.name+' — '+b.name,client_id:c.id,branch_id:b.id}))];
+      for(const row of rows)if(Number.isFinite(row.lat)&&Number.isFinite(row.lng))sites.push({...row,km:distance(row.lat,row.lng)});
+    }
+    return sites.sort((a,b)=>a.km-b.km).slice(0,30);
+  }
+  let voiceEnabled=false, wakeEnabled=false, recognition=null, waitForCommand=false, restartVoiceTimer=null;
+  function voiceStatus(text) { const el=$('#layla-status');if(el)el.textContent=text; }
+  function stopVoice() {
+    wakeEnabled=false;waitForCommand=false;clearTimeout(restartVoiceTimer);
+    if(recognition){recognition.onend=null;recognition.abort();recognition=null;}
+    if(window.speechSynthesis)window.speechSynthesis.cancel();
+  }
+  function speakReply(text) {
+    if(!window.speechSynthesis||!text)return;
+    if(recognition){recognition.onend=null;recognition.abort();recognition=null;}
+    speechSynthesis.cancel();
+    const utterance=new SpeechSynthesisUtterance(text.replace(/[*#]/g,'').slice(0,3000));
+    const voices=speechSynthesis.getVoices();
+    utterance.voice=voices.find(v=>v.lang.toLowerCase()==='ar-eg')||voices.find(v=>v.lang.startsWith('ar'))||null;
+    utterance.lang='ar-EG';utterance.rate=0.96;
+    utterance.onend=()=>{if(wakeEnabled)startVoiceInput(true);};
+    utterance.onerror=utterance.onend;
+    speechSynthesis.speak(utterance);
+  }
+  function startVoiceInput(wake) {
+    if(!SR){toast('التعرف الصوتي غير مدعوم هنا. استخدم ميكروفون الكيبورد.','err');return;}
+    if(recognition){recognition.onend=null;recognition.abort();}
+    const r=new SR();recognition=r;r.lang='ar-EG';r.interimResults=false;r.continuous=false;
+    voiceStatus(wake?'النداء مفعّل: قول «يا ليلة» والتطبيق مفتوح':'سامعاك… اتكلم وبعدها راجع النص واضغط إرسال');
+    r.onresult=e=>{
+      const text=Array.from(e.results).map(x=>x[0].transcript).join(' ').trim();
+      if(wake){
+        const match=text.match(/(?:يا\s*)?(?:ليلة|ليلى|ليلا)(?:[،,:\s]+|$)(.*)/);
+        if(match||waitForCommand){
+          const command=match?(match[1]||'').trim():text;waitForCommand=!command;
+          if(command){waitForCommand=false;sendChat(command);}else voiceStatus('سامعاك، قول طلبك');
+        }
+      }else{const t=$('#cin');if(t){t.value=(t.value?t.value+' ':'')+text;t.dispatchEvent(new Event('input'));t.focus();}}
+    };
+    r.onerror=e=>{if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){wakeEnabled=false;voiceStatus('تعذّر الوصول للميكروفون. راجع إذن المتصفح.');}else voiceStatus('مسمعتش بوضوح، جرّب تاني');};
+    r.onend=()=>{recognition=null;if(wakeEnabled&&!document.hidden&&route().parts[0]==='layla'&&!S.chatBusy&&!(window.speechSynthesis&&window.speechSynthesis.speaking))restartVoiceTimer=setTimeout(()=>startVoiceInput(true),600);};
+    try{r.start();}catch(e){wakeEnabled=false;voiceStatus('الميكروفون مش جاهز، جرّب تاني');}
+  }
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){stopVoice();voiceStatus('الصوت متوقف لأن التطبيق في الخلفية');}});
+
   const CHAT_KEY = 'yaqoub_layla_chat';
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch (e) { return []; } }
-  function saveChat() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch (e) { /* تجاهل */ } }
+  function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY + ':' + S.user.id) || '[]'); } catch (e) { return []; } }
+  let chatSaveQueue = Promise.resolve();
+  function saveChat() {
+    const owner = S.user.id;
+    const messages = JSON.parse(JSON.stringify(S.chat.slice(-40)));
+    try { localStorage.setItem(CHAT_KEY + ':' + S.user.id, JSON.stringify(messages)); } catch (e) {}
+    chatSaveQueue = chatSaveQueue.catch(() => {}).then(() => api.saveChat(messages, owner)).catch(() => {
+      const status = $('#layla-status'); if (status) status.textContent = 'المحادثة محفوظة على الجهاز؛ المزامنة تحتاج إنترنت';
+    });
+  }
 
   // زيارات تمت وناقص فيها وصف اللي اتعمل
   function missingDetails(v) {
@@ -788,6 +920,11 @@
       L.push('زيارات تمت وناقص فيها تفاصيل:');
       miss.forEach(m => L.push('- visit_id=' + m.v.id + ' | ' + ((S.cmap.get(m.v.client_id) || {}).name || '') + ' | ' + KINDS[m.v.kind] + ' ' + dfShort.format(new Date(m.v.at)) + ' | ناقص: ' + m.what));
     }
+    L.push('فروع العملاء: ' + S.branches.map(b => b.name + ' لدى ' + ((S.cmap.get(b.client_id)||{}).name||'') + ' branch_id=' + b.id).slice(0,30).join(' | '));
+    if (S.location && Date.now() - S.location.at < 300000) {
+      L.push('مسافات محسوبة محليًا بخط مستقيم، ليست مسافة طريق أو زمن قيادة، قياس منذ ' + Math.round((Date.now()-S.location.at)/1000) + ' ثانية:');
+      L.push(...nearbySites().map(b => b.label + ': ' + b.km.toFixed(1) + ' كم client_id=' + b.client_id + (b.branch_id ? ' branch_id=' + b.branch_id : '')));
+    } else L.push('الموقع الحالي غير مشارك أو قديم. إذا سأل عن المسافة اطلب منه ضغط زر «موقعي»؛ لا تخمّن.');
     return L.join('\n');
   }
 
@@ -816,13 +953,34 @@
     return arr;
   }
 
-  const fmtMsg = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+  function fmtMsg(text) {
+    const safe=esc(String(text||'').replace(/(?:visit_id|client_id|branch_id)\s*=\s*[0-9a-f-]{36}/gi,'').trim());
+    const lines=safe.split('\n'),out=[];
+    const inline=t=>t.replace(/\[([^\]\n]+)\]\((https:\/\/www\.google\.com\/maps\/[^\s)]+)\)/g,'<a class="linkbtn" href="$2" target="_blank" rel="noopener noreferrer">$1</a>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+    const cells=line=>line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());
+    let code=false;
+    for(let i=0;i<lines.length;i++){
+      const line=lines[i];
+      if(line.trim().startsWith('```')){out.push(code?'</code></pre>':'<pre class="chat-code"><code>');code=!code;continue;}
+      if(code){out.push(line+'\n');continue;}
+      if(line.includes('|')&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])&&lines[i+1].includes('-')){
+        const heads=cells(line);i+=2;const rows=[];
+        while(i<lines.length&&lines[i].trim().startsWith('|')){rows.push(cells(lines[i]));i++;}
+        i--;out.push('<div class="chat-table"><table><thead><tr>'+heads.map(x=>'<th scope="col">'+inline(x)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(x=>'<td>'+inline(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');
+      }else if(/^\s*[-•]\s+/.test(line))out.push('<div class="chat-bullet">'+inline(line.replace(/^\s*[-•]\s+/,''))+'</div>');
+      else out.push(inline(line)+'<br>');
+    }
+    if(code)out.push('</code></pre>');
+    return out.join('');
+  }
 
   function draftCard(m, mi, d, di) {
     const x = d.data || {};
     const cname = id => (S.cmap.get(id) || {}).name;
     let title = '', lines = [];
-    if (d.type === 'client') {
+    if (d.type === 'visit') { title='تسجيل مشكلة / زيارة تمت'; lines=[cname(x.client_id), (S.branches.find(b=>b.id===x.branch_id)||{}).name,x.problem,x.description,x.cause,x.resolution,x.resolved===true?'تم الحل':'المشكلة لسه مفتوحة'];
+    } else if (d.type === 'branch') { title = 'فرع جديد'; lines = [cname(x.client_id),x.name,x.city,x.address];
+    } else if (d.type === 'client') {
       title = 'عميل جديد';
       lines = [x.name, '+' + normPhone(x.phone, '966'), x.city || S.settings.default_city];
     } else if (d.type === 'appointment') {
@@ -835,7 +993,7 @@
       title = 'تحديث زيارة';
       lines = [v ? (cname(v.client_id) || '') + '، ' + KINDS[v.kind] + ' ' + dfShort.format(new Date(v.at)) : 'زيارة مش موجودة'];
       if (x.resolved === true) lines.push('العطل اتحل');
-      ['description', 'resolution', 'notes', 'insp_about', 'insp_needs', 'supply_items'].forEach(k => { if (x[k]) lines.push(x[k]); });
+      ['problem','cause','device_name','description', 'resolution', 'notes', 'insp_about', 'insp_needs', 'supply_items'].forEach(k => { if (x[k]) lines.push(x[k]); });
     } else if (d.type === 'contact') {
       title = 'رقم تواصل';
       lines = [cname(x.client_id) || '(العميل مش موجود)', x.name + (x.role ? ' (' + x.role + ')' : ''), '+' + normPhone(x.phone, '966')];
@@ -864,16 +1022,32 @@
     S.chatBusy = true; saveChat(); renderChat();
     try {
       const r = await api.layla(apiMessages(), laylaDigest());
+      if (voiceEnabled) speakReply(r.reply || '');
       S.chat.push({ role: 'assistant', content: r.reply || '...', drafts: (r.drafts || []).map(d => Object.assign({ state: 'new' }, d)) });
     } catch (e) {
       console.error(e);
       S.chat.push({ role: 'assistant', content: 'مقدرتش أرد دلوقتي: ' + (e.message || 'مشكلة'), error: true });
     }
     S.chatBusy = false; saveChat(); renderChat();
+    if(wakeEnabled&&!recognition&&!(window.speechSynthesis&&window.speechSynthesis.speaking))startVoiceInput(true);
   }
 
   async function applyDraft(d) {
     const x = d.data || {};
+    if (d.type === 'visit') {
+      if(!S.cmap.has(x.client_id))throw new Error('العميل غير موجود');
+      if(x.branch_id&&!S.branches.some(b=>b.id===x.branch_id&&b.client_id===x.client_id))throw new Error('الفرع غير صحيح');
+      const at=x.at?new Date(x.at):new Date();if(isNaN(at))throw new Error('وقت الزيارة غير صحيح');
+      const saved=await api.saveVisit({client_id:x.client_id,branch_id:x.branch_id||null,status:'done',kind:'fault',
+        category:x.category||null,at:at.toISOString(),problem:x.problem||null,description:x.description||null,
+        cause:x.cause||null,device_name:x.device_name||null,resolution:x.resolution||null,resolved:x.resolved===true,
+        notes:x.notes||null});
+      upsertVisit(saved);return 'اتسجلت المشكلة وحالتها في سجل العميل. هقدر أرجع للحل في المرات الجاية.';
+    }
+    if (d.type === 'branch') {
+      if (!S.cmap.has(x.client_id)) throw new Error('حدد العميل الأول');
+      const saved = await api.saveBranch(x); S.branches.push(saved); return 'اتحفظ الفرع «' + saved.name + '».';
+    }
     if (d.type === 'client') {
       const phone = normPhone(x.phone, '966');
       if (phone.length < 9) throw new Error('الرقم مش مظبوط');
@@ -897,7 +1071,12 @@
       const v = S.vmap.get(x.visit_id);
       if (!v) throw new Error('الزيارة مش موجودة');
       const patch = { id: v.id };
-      ['description', 'resolution', 'insp_about', 'insp_needs', 'supply_items'].forEach(k => { if (x[k]) patch[k] = x[k]; });
+      ['description','problem','cause','device_name','resolution','insp_about','insp_needs','supply_items'].forEach(k=>{if(typeof x[k]==='string'&&x[k].trim())patch[k]=x[k].trim();});
+      if(x.branch_id){
+        const branch=S.branches.find(b=>b.id===x.branch_id&&b.client_id===v.client_id);
+        if(!branch)throw new Error('الفرع مش تابع للعميل ده');
+        patch.branch_id=branch.id;
+      }
       if (x.notes) patch.notes = v.notes && v.notes !== x.notes ? v.notes + '\n' + x.notes : x.notes;
       if (x.resolved === true) Object.assign(patch, { resolved: true, unresolved_reason: null, unresolved_note: null, follow_up_date: null });
       const saved = await api.saveVisit(patch);
@@ -918,27 +1097,24 @@
   }
 
   V.layla = (p, q) => {
-    if (!S.chat.length || q.get('ask')) {
-      const last = S.chat[S.chat.length - 1];
-      if (!S.chat.length || !(last && last.role === 'assistant' && last.meta)) seedChat();
-    }
-    const chips = ['إيه المتأخر؟', 'مواعيدي بكرة', 'لخّصلي الأسبوع', 'إيه الأعطال المفتوحة؟', 'معاينات من غير قرار'];
+    if (!S.chat.length) seedChat();
+    const chips=['سجلي تفاصيل مشكلة اشتغلنا فيها','إيه الأعطال المفتوحة؟','دوري على مشكلة شبه دي','إيه الزيارات الناقصها تفاصيل؟'];
     return {
-      title: 'ليلة', back: true, nav: false, cls: 'chatpage',
-      topRight: '<button class="ib" data-act="clearchat" aria-label="محادثة جديدة">' + icon('trash') + '</button>',
-      html: '<div id="chat" class="chat"></div>' +
-        '<div class="composer"><div class="qchips">' + chips.map(c => '<button type="button" data-act="quickchat" data-t="' + esc(c) + '">' + esc(c) + '</button>').join('') + '</div>' +
-        '<div class="cbox"><textarea id="cin" rows="1" placeholder="اسأل ليلة، أو قولها تضيف عميل أو ميعاد" aria-label="رسالة"></textarea>' +
-        (SR ? '<button type="button" class="ib" data-act="mic" aria-label="تسجيل صوتي">' + icon('mic') + '</button>' : '') +
-        '<button type="button" class="send" data-act="sendchat" aria-label="إرسال">' + icon('send') + '</button></div></div>',
-      after() {
-        renderChat();
-        const t = $('#cin');
-        const fit = () => { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px'; };
-        t.addEventListener('input', fit);
-        t.addEventListener('keydown', e => {
-          if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer:fine)').matches) { e.preventDefault(); const v = t.value; t.value = ''; fit(); sendChat(v); }
-        });
+      title:'ليلة — مساعدة شغلك',back:true,nav:false,cls:'chatpage layla-plus',
+      topRight:'<button class="ib" data-act="clearchat" aria-label="محادثة جديدة">'+icon('plus')+'</button>',
+      html:'<section class="layla-hero"><img src="icons/layla.svg" alt=""><div><h2>أهلًا يا بشمهندس نادر</h2><p>عملاؤك وفروعهم، ومشاكلك وحلولها… أرجع لها معاك.</p></div></section>'+
+        '<p class="layla-status" id="layla-status" role="status" aria-live="polite">المحادثة بتتزامن مع حسابك. الإضافات والتعديلات بتحتاج تأكيدك.</p>'+
+        '<div id="chat" class="chat" aria-live="polite" aria-relevant="additions"></div>'+
+        '<div class="composer"><div class="qchips">'+chips.map(c=>'<button type="button" data-act="quickchat" data-t="'+esc(c)+'">'+esc(c)+'</button>').join('')+'</div>'+
+        '<div class="cbox"><textarea id="cin" rows="1" placeholder="احكيلي: العميل والفرع، المشكلة، جرّبت إيه والنتيجة…" aria-label="رسالتك لليلة"></textarea>'+
+        '<button class="ib" data-act="mic" aria-label="إملاء صوتي" '+(!SR?'disabled':'')+'>'+icon('mic')+'</button>'+
+        '<button class="send" data-act="sendchat" aria-label="إرسال">'+icon('send')+'</button></div>'+
+        '</div>',
+      after(){
+        renderChat();const t=$('#cin');
+        const fit=()=>{t.style.height='auto';t.style.height=Math.min(t.scrollHeight,160)+'px';};
+        t.addEventListener('input',fit);
+        t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&window.matchMedia('(pointer:fine)').matches){e.preventDefault();const v=t.value;t.value='';fit();sendChat(v);}});
       }
     };
   };
@@ -1230,7 +1406,7 @@
     const client = cid ? S.cmap.get(cid) : null;
     const v = visit || {};
     F = {
-      mode, visit, sub, clientId: client ? client.id : null, newClient: false,
+      mode, visit, sub, clientId: client ? client.id : null, branchId: v.branch_id || q.get('branch') || '', newClient: false,
       kind: v.kind || q.get('kind') || (q.get('parent') ? 'install' : null),
       resolved: v.resolved == null ? null : v.resolved,
       quoteSent: !!v.quote_sent, decision: v.decision || 'pending',
@@ -1247,7 +1423,7 @@
     // --- العميل ---
     let clientBlock;
     if (fixedClient) {
-      clientBlock = '<div class="picked"><b>' + esc(client.name) + '</b><span class="muted small">' + esc(client.city || '') + '</span></div>';
+      clientBlock = '<div class="picked"><b>' + esc(client.name) + '</b><span class="muted small">' + esc(client.city || '') + '</span></div>' + branchSelectHtml(client.id,F.branchId);
     } else {
       clientBlock =
         '<div class="seg" style="margin-bottom:12px"><button data-act="cswitch" data-v="old" id="cs_old" class="on">عميل موجود</button><button data-act="cswitch" data-v="new" id="cs_new">عميل جديد</button></div>' +
@@ -1397,7 +1573,7 @@
       $('#cSearch').classList.toggle('hidden', !!picked);
       if (picked) {
         $('#cPick').innerHTML = '<div class="picked"><b>' + esc(picked.name) + '</b><span class="muted small">' + esc(picked.city || '') + '</span>' +
-          '<button type="button" class="ib" data-act="cclear" aria-label="تغيير">' + icon('x') + '</button></div>';
+          '<button type="button" class="ib" data-act="cclear" aria-label="تغيير">' + icon('x') + '</button></div>' + branchSelectHtml(picked.id, F.branchId);
       }
     }
     refreshMetChips();
@@ -1489,6 +1665,7 @@
         notes: val('f_notes'), parent_visit_id: F.parent || null, priority: F.priority, met_with: val('f_met'),
         problem: null, cause: null, details: {}
       };
+      row.branch_id = $('#f_branch') && $('#f_branch').value || null;
       if (F.visit) row.id = F.visit.id;
       if (F.mode === 'appt') {
         row.status = 'scheduled';
@@ -1787,15 +1964,21 @@
       if (!d || d.state !== 'new') return;
       d.state = 'no'; saveChat(); renderChat();
     },
-    mic(el) {
-      if (!SR) return toast('الميكروفون مش مدعوم هنا. استخدم ميكروفون الكيبورد');
-      const r = new SR();
-      r.lang = 'ar-SA'; r.interimResults = false;
-      r.onresult = e => { const t = $('#cin'); t.value = (t.value ? t.value + ' ' : '') + e.results[0][0].transcript; t.focus(); };
-      r.onerror = () => toast('مسمعتش حاجة، جرّب تاني', 'err');
-      r.onend = () => el.classList.remove('rec');
-      el.classList.add('rec'); r.start();
+    mic() { startVoiceInput(false); },
+    togglevoice() { voiceEnabled=!voiceEnabled; if(!voiceEnabled&&window.speechSynthesis)speechSynthesis.cancel();render(); },
+    togglewake() {
+      if(wakeEnabled)stopVoice();else{wakeEnabled=true;voiceEnabled=true;startVoiceInput(true);}
+      render();
     },
+    async chatlocation() {
+      if(!confirm('نحسب مسافتك من مواقع العملاء والفروع؟ موقعك الدقيق يفضل في ذاكرة الصفحة فقط، والمسافات وأسماء المواقع بتتبعت لليلة لمعالجة سؤالك.'))return;
+      const pos=await getPos();S.location={lat:pos.latitude,lng:pos.longitude,at:Date.now()};
+      const sites=nearbySites();
+      S.chat.push({role:'assistant',content:sites.length?'أقرب المواقع ليك بخط مستقيم:\n'+sites.slice(0,5).map(x=>x.label+': '+x.km.toFixed(1)+' كم').join('\n'):'مفيش إحداثيات محفوظة للعملاء. ضيف إحداثيات العميل أو الفرع الأول.'});
+      saveChat();renderChat();voiceStatus('تم حساب المسافات. الموقع صالح للمقارنة لمدة 5 دقائق.');
+    },
+    addbranch(el) { return editBranch(el.dataset.id,null); },
+    editbranch(el) { const b=S.branches.find(x=>x.id===el.dataset.id);if(b)return editBranch(b.client_id,b); },
     async delmem(el) {
       await api.deleteMemory(el.dataset.id);
       const row = el.closest('.crow'); if (row) row.remove();
@@ -1982,6 +2165,7 @@
   function render() {
     if (!S.user) return;
     const r = route(), name = r.parts[0] || 'home';
+    if (name !== 'layla') stopVoice();
     if (name !== 'form') F = null;
     if (name !== 'form' && name !== 'clientform') CF = null;
     const view = V[name];
@@ -2024,6 +2208,8 @@
     appEl.innerHTML = '<div class="splash"><img src="icons/logo.svg" alt=""></div>';
     try {
       await loadData();
+      const remoteChat = await api.loadChat().catch(() => null);
+      if (Array.isArray(remoteChat)) S.chat = remoteChat;
     } catch (e) {
       console.error(e);
       appEl.innerHTML = '<div class="setup"><h2>مقدرتش أحمّل البيانات</h2><p style="margin:10px 0">اتأكد من النت، وإنك شغّلت ملف schema.sql في Supabase.</p><p class="muted small ltr">' + esc(e.message || '') + '</p><p style="margin-top:14px"><button class="btn" onclick="location.reload()">حاول تاني</button></p></div>';

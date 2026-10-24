@@ -92,6 +92,7 @@ export async function sendWebPush(
       Authorization: await vapidHeader(sub.endpoint, vapid.key, vapid.pub, vapid.subject),
     },
     body,
+    signal: AbortSignal.timeout(10000),
   });
   try { await r.arrayBuffer(); } catch { /* تجاهل */ }
   return r.status;
@@ -107,7 +108,7 @@ const daysSince = (d: Date, now: Date) => Math.floor((now.getTime() - d.getTime(
 const REASONS: Record<string, string> = { client_refused: 'رفض العميل', no_solution: 'مالوش حل', engineer_failed: 'المهندس لم يتوصل لحل', other: 'سبب آخر' };
 const YEAR_H = 24 * 365;
 
-type Item = { key: string; cooldownH: number; title: string; body: string; url: string; urgency?: string };
+type Item = { key: string; cooldownH: number; title: string; body: string; url: string; urgency?: string; standalone?: boolean; allowQuiet?: boolean; ttl?: number };
 
 export function buildItems(visits: any[], names: Map<string, string>, st: any, now: Date): Item[] {
   const items: Item[] = [];
@@ -157,16 +158,106 @@ export function buildBrief(visits: any[], items: Item[], now: Date): Item | null
   const mine = visits.filter((v) => v.status === 'scheduled' && localDay(new Date(v.at)) === today)
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   const follow = items.filter((i) => !i.key.startsWith('late:') && !i.key.startsWith('soon:')).length;
-  if (!mine.length && !follow) return null;
-  const parts: string[] = [];
+
+  const parts: string[] = ['صباح الخير، ربنا يبارك يومك. حدّد أهم مهمة وابدأ بيها.'];
   if (mine.length) parts.push((mine.length === 1 ? 'عندك ميعاد واحد' : 'عندك ' + mine.length + ' مواعيد') + ' النهارده، ' + (mine.length === 1 ? 'الساعة ' : 'أولهم الساعة ') + timeStr(new Date(mine[0].at)));
   if (follow) parts.push(follow === 1 ? 'حاجة واحدة محتاجة متابعة' : follow + ' حاجات محتاجة متابعة');
-  return { key: 'brief:' + today, cooldownH: 20, title: 'صباح الخير', body: parts.join('، '), url: '#/home' };
+  return { key: 'brief:' + today, cooldownH: 20, title: 'صباح الخير', body: parts.join('، '), url: '#/home', standalone: true };
 }
 
 /* =========================================================
    الخدمة
    ========================================================= */
+
+const VERSES = [
+  { text: 'فَإِنَّ مَعَ الْعُسْرِ يُسْرًا', ref: 'الشرح: 5', source: 'https://quran.com/94/5' },
+  { text: 'وَقُلْ رَبِّ زِدْنِي عِلْمًا', ref: 'من سورة طه: 114', source: 'https://quran.com/20/114' },
+];
+const HADITHS = [
+  { text: 'احْرِصْ عَلَى مَا يَنْفَعُكَ وَاسْتَعِنْ بِاللَّهِ وَلَا تَعْجَزْ', ref: 'من حديث صحيح مسلم 2664', source: 'https://sunnah.com/muslim:2664' },
+  { text: 'وَالْكَلِمَةُ الطَّيِّبَةُ صَدَقَةٌ', ref: 'من حديث صحيح البخاري 2989', source: 'https://sunnah.com/bukhari:2989' },
+];
+const TIPS = [
+  'قبل تغيير إعدادات راوتر أو سنترال، خد نسخة احتياطية وسجّل التغيير وخطة الرجوع.',
+  'في مشكلة كاميرا IP: راجع الطاقة والكابل وعنوان IP والوصول من نفس الشبكة قبل تغيير الإعدادات.',
+  'في الصوت باتجاه واحد بالـ VoIP: افحص مسار RTP وNAT وقواعد الفايروول قبل تعديلها.',
+  'قبل إضافة كاميرات PoE، راجع ميزانية الطاقة الكلية للسويتش واستهلاك كل جهاز.',
+  'سمّي الكابلات والبورتات وحدّث رسم الشبكة؛ التوثيق بيوفر وقت التشخيص في الزيارة الجاية.',
+  'في تعارض IP، راجع DHCP والـ reservations والعناوين الثابتة وسجّل سبب التعارض.',
+  'بعد كل إصلاح اختبر الخدمة مع العميل وسجّل السبب والحل، مش مجرد إن الجهاز اشتغل.',
+];
+const MOTIVATION = [
+  'ابدأ بمهمة واحدة واضحة؛ الإنجاز الصغير المنتظم بيفرق.',
+  'رتّب أولوياتك: العطل المؤثر أولًا، وبعده المتابعات اللي مستنية قرار.',
+  'اتعلم حاجة صغيرة وطبّقها النهارده. التقدم مش لازم يكون قفزة كبيرة.',
+  'خد نفس وراجع الدليل قبل أي تعديل؛ الهدوء جزء من شطارتك.',
+  'متنساش وقت للراحة والمية وسط الزيارات؛ صحتك تستاهل اهتمامك.',
+  'متابعة عميل قديم ممكن تكون أهم من مكالمة جديدة. اختار متابعة وخلصها.',
+  'دوّن اللي اتعلمته من عطل النهارده عشان يبقى خبرة متاحة بكرة.',
+];
+const localMinute = (d: Date) => {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d);
+  return Number(p.find(x => x.type === 'hour')!.value) * 60 + Number(p.find(x => x.type === 'minute')!.value);
+};
+export function buildDailyItems(now: Date): Item[] {
+  const day = localDay(now);
+  const index = Math.floor(Date.parse(day + 'T00:00:00Z') / 86400000);
+  const minute = localMinute(now);
+  const items: Item[] = [];
+  const add = (at: number, key: string, title: string, body: string) => {
+    if (minute >= at && minute < at + 10) items.push({ key: 'daily:' + key + ':' + day, cooldownH: YEAR_H, title, body, url: '#/home', standalone: true });
+  };
+  add(7 * 60, 'morning-dhikr', 'تذكير بأذكار الصباح', 'خد دقائق لأذكار الصباح وابدأ يومك بذكر الله.');
+  add(11 * 60, 'motivation', 'خطوة لقدام', MOTIVATION[index % MOTIVATION.length]);
+  add(14 * 60, 'technical', 'معلومة تقنية', TIPS[index % TIPS.length]);
+  const verse = VERSES[index % VERSES.length];
+  add(16 * 60, 'quran', 'آية وتذكير', '﴿' + verse.text + '﴾ — ' + verse.ref);
+  add(18 * 60, 'evening-dhikr', 'تذكير بأذكار المساء', 'افتكر أذكار المساء، وخد لحظة هدوء وذكر وسط يومك.');
+  const hadith = HADITHS[index % HADITHS.length];
+  add(19 * 60, 'hadith', 'من هدي النبي ﷺ', '«' + hadith.text + '» — ' + hadith.ref);
+  add(21 * 60, 'evening', 'مساء الخير', 'سجّل الزيارات اللي خلصتها، راجع مواعيد بكرة، وخد وقتك للراحة.');
+  return items;
+}
+
+type PrayerDay = { day: string; timings: Record<string, string> };
+let prayerCache: PrayerDay | null = null;
+export async function fetchPrayerDay(now: Date): Promise<PrayerDay> {
+  const day = localDay(now);
+  if (prayerCache?.day === day) return prayerCache;
+  const [year, month, date] = day.split('-');
+  const response = await fetch('https://api.aladhan.com/v1/timingsByCity/' + date + '-' + month + '-' + year +
+    '?city=Riyadh&country=Saudi%20Arabia&method=4&timezonestring=Asia%2FRiyadh', { signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error('prayer service HTTP ' + response.status);
+  const result = await response.json();
+  if (result.code !== 200 || result.data?.date?.gregorian?.date !== date + '-' + month + '-' + year ||
+      result.data?.meta?.timezone !== 'Asia/Riyadh') throw new Error('invalid prayer date/timezone');
+  const timings = result.data.timings;
+  for (const key of ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d(?:\s|$)/.test(timings?.[key] ?? '')) throw new Error('invalid prayer timing');
+  }
+  prayerCache = { day, timings };
+  return prayerCache;
+}
+export function buildPrayerItems(now: Date, prayer: PrayerDay | null, city: string): Item[] {
+  if (!prayer || prayer.day !== localDay(now) || !['الرياض', 'riyadh'].includes(city.trim().toLowerCase())) return [];
+  const minute = localMinute(now);
+  const names: Record<string, string> = { Fajr: 'الفجر', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' };
+  const items: Item[] = [];
+  for (const [key, name] of Object.entries(names)) {
+    const value = prayer.timings[key].slice(0, 5);
+    const [hour, min] = value.split(':').map(Number);
+    const at = hour * 60 + min;
+    // Existing ten-minute cron sends one advance reminder; never send a stale prayer alert.
+    if (minute >= at - 10 && minute < at) items.push({
+      key: 'prayer:' + prayer.day + ':' + key, cooldownH: YEAR_H,
+      title: 'تذكير بصلاة ' + name + ' — الرياض',
+      body: name + ' الساعة ' + value + ' بتوقيت الرياض. مواقيت محسوبة بطريقة أم القرى.',
+      url: '#/home', urgency: 'high', standalone: true, allowQuiet: true, ttl: 120,
+    });
+  }
+  return items;
+}
+
 function safeEq(a: string, b: string) {
   if (a.length !== b.length) return false;
   let r = 0;
@@ -215,13 +306,18 @@ Deno.serve(async (req: Request) => {
   const now = new Date();
   const hour = localHour(now);
   const quiet = QUIET_FROM > QUIET_TO ? (hour >= QUIET_FROM || hour < QUIET_TO) : (hour >= QUIET_FROM && hour < QUIET_TO);
-  const summary = { owners: byOwner.size, sent: 0, removed: 0, skipped: 0 };
+  const summary = { owners: byOwner.size, sent: 0, removed: 0, skipped: 0, prayer_available: false };
+  let prayers: PrayerDay | null = null;
+  if (!test) {
+    try { prayers = await fetchPrayerDay(now); summary.prayer_available = true; }
+    catch (error) { console.error('prayer timings unavailable', String(error)); }
+  }
 
-  const deliver = async (list: any[], payload: any, urgency?: string) => {
+  const deliver = async (list: any[], payload: any, urgency?: string, ttl?: number) => {
     let okCount = 0;
     for (const s of list) {
       let status = 0;
-      try { status = await sendWebPush(s, payload, vapid, { urgency }); } catch (e) { console.error('push error', String(e)); }
+      try { status = await sendWebPush(s, payload, vapid, { urgency, ttl }); } catch (e) { console.error('push error', String(e)); }
       if (status >= 200 && status < 300) okCount++;
       else if (status === 404 || status === 410) { await admin.from('push_subscriptions').delete().eq('id', s.id); summary.removed++; }
     }
@@ -234,7 +330,7 @@ Deno.serve(async (req: Request) => {
       continue;
     }
     const [settings, vis, cli] = await Promise.all([
-      admin.from('settings').select('alert_quote_days,alert_followup_days,remind_before_min').eq('owner', owner).maybeSingle(),
+      admin.from('settings').select('alert_quote_days,alert_followup_days,remind_before_min,default_city').eq('owner', owner).maybeSingle(),
       admin.from('visits').select('id,client_id,status,kind,at,quote_sent,quote_sent_at,decision,resolved,follow_up_date,unresolved_reason')
         .eq('owner', owner).or('status.eq.scheduled,and(status.eq.done,kind.in.(inspection,fault))').limit(3000),
       admin.from('clients').select('id,name').eq('owner', owner),
@@ -246,28 +342,37 @@ Deno.serve(async (req: Request) => {
     const items = buildItems(vis.data ?? [], names, st, now);
     const brief = buildBrief(vis.data ?? [], items, now);
     if (brief) items.push(brief);
+    items.push(...buildDailyItems(now), ...buildPrayerItems(now, prayers, settings.data?.default_city || 'الرياض'));
 
     // مرة واحدة بس لكل تنبيه (أو بعد فترة التهدئة)
     const keys = items.map((i) => i.key);
     const logs = keys.length ? (await admin.from('push_log').select('key,sent_at').eq('owner', owner).in('key', keys)).data ?? [] : [];
     const last = new Map<string, number>(logs.map((l: any) => [l.key, new Date(l.sent_at).getTime()]));
     let fresh = items.filter((i) => !last.has(i.key) || now.getTime() - (last.get(i.key) as number) >= i.cooldownH * 36e5);
-    if (quiet) { summary.skipped += fresh.length; continue; }
+    if (quiet) {
+      summary.skipped += fresh.filter(i => !i.allowQuiet).length;
+      fresh = fresh.filter(i => i.allowQuiet);
+    }
     if (!fresh.length) continue;
 
-    let okCount = 0;
-    if (fresh.length > 3) {
-      const first = fresh.filter((i) => !i.key.startsWith('brief:')).slice(0, 3).map((i) => i.title + ': ' + i.body.split('،')[0]);
-      okCount = await deliver(list, { title: 'محتاج متابعة (' + fresh.length + ')', body: first.join('\n'), url: '#/home', tag: 'digest' });
+    const delivered: Item[] = [];
+    const separate = fresh.filter(i => i.standalone);
+    const work = fresh.filter(i => !i.standalone);
+    for (const it of separate) {
+      if (await deliver(list, { title: it.title, body: it.body, url: it.url, tag: it.key }, it.urgency, it.ttl) > 0) delivered.push(it);
+    }
+    if (work.length > 3) {
+      const body = work.slice(0, 3).map(i => i.title + ': ' + i.body.split('،')[0]).join('\n');
+      if (await deliver(list, { title: 'محتاج متابعة (' + work.length + ')', body, url: '#/home', tag: 'digest' }) > 0) delivered.push(...work);
     } else {
-      for (const it of fresh) {
-        const n = await deliver(list, { title: it.title, body: it.body, url: it.url, tag: it.key }, it.urgency);
-        okCount = Math.max(okCount, n);
+      for (const it of work) {
+        if (await deliver(list, { title: it.title, body: it.body, url: it.url, tag: it.key }, it.urgency) > 0) delivered.push(it);
       }
     }
-    if (okCount > 0) {
-      summary.sent += fresh.length;
-      await admin.from('push_log').upsert(fresh.map((i) => ({ owner, key: i.key, sent_at: now.toISOString() })), { onConflict: 'owner,key' });
+    if (delivered.length) {
+      summary.sent += delivered.length;
+      const saved = await admin.from('push_log').upsert(delivered.map(i => ({ owner, key: i.key, sent_at: now.toISOString() })), { onConflict: 'owner,key' });
+      if (saved.error) throw saved.error;
     }
   }
   return json(summary);

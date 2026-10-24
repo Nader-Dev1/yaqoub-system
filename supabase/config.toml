@@ -1,0 +1,7 @@
+# Function slugs must match functions.invoke() and push_cron.sql.
+[functions.layla]
+verify_jwt = true
+
+# notify validates the scheduler secret or signed-in user in its handler.
+[functions.notify]
+verify_jwt = false
