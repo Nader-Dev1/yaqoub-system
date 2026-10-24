@@ -936,7 +936,7 @@
   function fmtMsg(text) {
     const safe=esc(String(text||'').replace(/(?:visit_id|client_id|branch_id)\s*=\s*[0-9a-f-]{36}/gi,'').trim());
     const lines=safe.split('\n'),out=[];
-    const inline=t=>t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+    const inline=t=>t.replace(/\[([^\]\n]+)\]\((https:\/\/www\.google\.com\/maps\/[^\s)]+)\)/g,'<a class="linkbtn" href="$2" target="_blank" rel="noopener noreferrer">$1</a>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
     const cells=line=>line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());
     let code=false;
     for(let i=0;i<lines.length;i++){
@@ -1082,17 +1082,14 @@
     return {
       title:'ليلة — مساعدة شغلك',back:true,nav:false,cls:'chatpage layla-plus',
       topRight:'<button class="ib" data-act="clearchat" aria-label="محادثة جديدة">'+icon('plus')+'</button>',
-      html:'<section class="layla-hero"><img src="icons/layla.svg" alt=""><div><h2>أهلًا، أنا ليلة</h2><p>عملاؤك وفروعهم، ومشاكلك وحلولها… أرجع لها معاك.</p></div></section>'+
-        '<div class="layla-tools"><button data-act="togglevoice" aria-pressed="'+voiceEnabled+'">'+(voiceEnabled?'إيقاف الرد الصوتي':'رد مسموع')+'</button>'+
-        '<button data-act="togglewake" aria-pressed="'+wakeEnabled+'" '+(!SR?'disabled':'')+'>'+(wakeEnabled?'إيقاف النداء':'نداء يا ليلة')+'</button>'+
-        '<button data-act="chatlocation">موقعي والمسافات</button><a href="#/settings">الذاكرة</a></div>'+
+      html:'<section class="layla-hero"><img src="icons/layla.svg" alt=""><div><h2>أهلًا يا بشمهندس نادر</h2><p>عملاؤك وفروعهم، ومشاكلك وحلولها… أرجع لها معاك.</p></div></section>'+
         '<p class="layla-status" id="layla-status" role="status" aria-live="polite">المحادثة بتتزامن مع حسابك. الإضافات والتعديلات بتحتاج تأكيدك.</p>'+
         '<div id="chat" class="chat" aria-live="polite" aria-relevant="additions"></div>'+
         '<div class="composer"><div class="qchips">'+chips.map(c=>'<button type="button" data-act="quickchat" data-t="'+esc(c)+'">'+esc(c)+'</button>').join('')+'</div>'+
         '<div class="cbox"><textarea id="cin" rows="1" placeholder="احكيلي: العميل والفرع، المشكلة، جرّبت إيه والنتيجة…" aria-label="رسالتك لليلة"></textarea>'+
         '<button class="ib" data-act="mic" aria-label="إملاء صوتي" '+(!SR?'disabled':'')+'>'+icon('mic')+'</button>'+
         '<button class="send" data-act="sendchat" aria-label="إرسال">'+icon('send')+'</button></div>'+
-        '<small class="voice-note">النداء يحتاج التطبيق مفتوحًا. الصوت حسب دعم المتصفح، والتعرف قد يستخدم خدمة المتصفح. المسافات بخط مستقيم وليست زمن قيادة.</small></div>',
+        '</div>',
       after(){
         renderChat();const t=$('#cin');
         const fit=()=>{t.style.height='auto';t.style.height=Math.min(t.scrollHeight,160)+'px';};

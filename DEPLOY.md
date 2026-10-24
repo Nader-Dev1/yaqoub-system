@@ -127,3 +127,15 @@
 - **الحدود:** عدد الرسايل في الدقيقة واليوم محدود وبيتغير من جوجل. التطبيق نفسه (الزيارات والعملاء والإكسل) مش بيتأثر لو ليلة وقفت.
 - **المشاريع المجانية على Supabase** ممكن تتوقف لو مفيش استخدام لفترة. افتح الموقع بشكل منتظم، ولو اتوقف ممكن تشغّله من لوحة Supabase.
 - خد نسخة احتياطية من بياناتك من وقت للتاني: من صفحة العملاء صدّر Excel أو CSV.
+
+### Layla: Google Maps routes and client branches
+
+Client page → **إضافة فرع** saves a named branch, address and coordinates under the same client. Visits select **فرع الزيارة**; the branch page shows that branch's visit history. Existing visits remain attached to their original client.
+
+Layla's `plan_route` resolves clients/branches using the signed-in user's RLS permissions, asks for ambiguous branches and a starting address, and returns a Google Maps navigation link without an API key.
+
+For road/traffic calculations inside Layla, enable **Routes API** and billing in Google Cloud, restrict a server API key to Routes API, set a daily quota, then add **GOOGLE_MAPS_API_KEY** in Supabase Edge Function secrets. Never place this key in frontend config. No billing account or key is provisioned by this change. Deploy `index.ts` together with `routes.ts`.
+
+With a configured key, one route request can make at most four Google requests: alternatives plus up to three individually measured stops near the returned fastest route geometry. This is a limited shortlist, not an exhaustive search or a guarantee of fastest travel. Only branches with saved coordinates enter the stop shortlist. Travel times vary; combining stops requires another route calculation. Google receives the requested addresses/coordinates to calculate routes; names/route results are passed to the configured AI provider in the chat flow.
+
+System font remains IBM Plex Sans Arabic; Cairo applies to Layla chat. Spoken replies, wake-word controls, location/distance and memory shortcuts are removed from the chat UI; keyboard dictation remains available where supported.
