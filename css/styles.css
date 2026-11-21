@@ -532,3 +532,19 @@ details.more[open] { padding-bottom: 6px; }
 .tag.urgent { background: var(--orange-100); color: #D95500; }
 .tag.emergency { background: var(--red-100); color: var(--red); }
 .subhead { font-size: 14px; font-weight: 700; color: var(--navy-900); margin: 4px 0 8px; }
+
+/* Layla global assistant: available on all signed-in routes. */
+.layla-global-fab { position: fixed; inset-inline-end: 16px; bottom: calc(88px + var(--safe-b, 0px)); z-index: 35; border: 0; border-radius: 999px; background: #172b50; color: white; display: flex; align-items: center; gap: 7px; padding: 10px 13px; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 5px 22px #0003; }
+.layla-global-fab img { width: 27px; height: 27px; }
+.layla-global-panel { display: none; position: fixed; bottom: calc(88px + var(--safe-b, 0px)); inset-inline: 12px; z-index: 85; max-width: 410px; margin-inline-start: auto; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--text); box-shadow: 0 10px 40px #0004; direction: rtl; }
+.layla-global-panel.open { display: block; }
+.layla-global-header { display: flex; align-items: center; justify-content: space-between; font-size: 18px; }
+.layla-global-header button { background: transparent; border: 0; font-size: 26px; color: inherit; cursor: pointer; }
+.layla-global-panel p { margin: 10px 0; font-size: 14px; }
+.layla-voice-answer { white-space: pre-wrap; max-height: 180px; overflow: auto; line-height: 1.7; }
+.layla-global-input { display: flex; align-items: center; gap: 6px; }
+.layla-global-input input { flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--text); font: inherit; }
+.layla-global-input button { padding: 10px; border: 0; border-radius: 10px; background: var(--navy-900); color: white; font: inherit; cursor: pointer; }
+.layla-global-input button.rec { background: #b91c1c; }
+.layla-wake-toggle { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; }
+@media (min-width: 880px) { .layla-global-fab { bottom: 26px; inset-inline-end: 28px; } .layla-global-panel { bottom: 82px; inset-inline-end: 28px; } }
