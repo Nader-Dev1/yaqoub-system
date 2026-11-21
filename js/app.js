@@ -844,6 +844,10 @@
       const at = new Date(x.at);
       lines = [cname(x.client_id) || x.client_name || '(العميل مش محدد)', isNaN(at) ? x.at : relDay(at) + '، ' + dfTime.format(at), (KINDS[x.kind] || x.kind) + (x.category ? '، ' + x.category : '')];
       if (x.notes) lines.push(x.notes);
+    } else if (d.type === 'visit') {
+      title = 'تسجيل زيارة تمت';
+      lines = [cname(x.client_id) || x.client_name || '(العميل مش محدد)',
+        (KINDS[x.kind] || x.kind || 'زيارة') + '، ' + (x.at || 'دلوقتي'), x.description || x.problem];
     } else if (d.type === 'visit_update') {
       const v = S.vmap.get(x.visit_id);
       title = 'تحديث زيارة';
@@ -1012,7 +1016,35 @@
     S.chatBusy = true; saveChat(); renderChat();
     try {
       const r = await api.layla(apiMessages(), laylaDigest());
-      S.chat.push({ role: 'assistant', content: r.reply || '...', drafts: (r.drafts || []).map(d => Object.assign({ state: 'new' }, d)) });
+      const drafts = (r.drafts || []).map(d => Object.assign({ state: 'new' }, d));
+      let message = r.reply || '...';
+      // Only execute a single complete, unambiguous write requested explicitly.
+      // Generic chat replies and read-only queries never trigger database writes.
+      const explicitWrite = /(?:^|\\s)(?:سجل(?:ي|ه|ها)?|سجّل(?:ي|ه|ها)?|ضيف(?:ي|ه|ها)?|اضيف(?:ي|ه|ها)?|أضيف(?:ي|ه|ها)?|اضف|أضف|احفظ(?:ي|ه|ها)?|خلي(?:ها)?\\s+مسجلة|حدّث(?:ي)?|حدث(?:ي)?|عدّل(?:ي)?|عدل(?:ي)?)(?:\\s|$)/i.test(text)
+        && !/(?:ما\\s*تسجل|متسجل|ما\\s*تضيف|ما\\s*تحفظ|بلاش\\s*تسجل|بدون\\s*تسجيل)/i.test(text);
+      if (explicitWrite && drafts.length === 1) {
+        const d = drafts[0];
+        const x = d.data || {};
+        const validClient = d.type !== 'client' && d.type !== 'visit_update' && d.type !== 'contact'
+          ? Boolean(x.client_id && S.cmap.has(x.client_id))
+          : true;
+        const ready = validClient &&
+          (d.type === 'visit' ? Boolean(x.client_id && S.cmap.has(x.client_id) && x.description && KINDS[x.kind])
+            : d.type === 'appointment' ? Boolean(x.client_id && S.cmap.has(x.client_id) && x.at && KINDS[x.kind])
+            : d.type === 'visit_update' ? Boolean(x.visit_id && S.vmap.has(x.visit_id) && (x.description || x.resolution || x.notes || x.resolved === true || x.insp_about || x.insp_needs || x.supply_items))
+            : d.type === 'contact' ? Boolean(x.client_id && S.cmap.has(x.client_id) && x.name && x.phone)
+            : d.type === 'client' ? Boolean(x.name && x.phone)
+            : false);
+        if (ready) {
+          try {
+            message = await applyDraft(d);
+            d.state = 'done';
+          } catch (err) {
+            message = 'مش قادر أسجّل العملية: ' + (err.message || 'خطأ أثناء الحفظ');
+          }
+        } else message = 'محتاج أحدد البيانات بدقة قبل التسجيل. راجع المسودة أو قولّي المعلومة الناقصة.';
+      }
+      S.chat.push({ role: 'assistant', content: message, drafts });
     } catch (e) {
       console.error(e);
       S.chat.push({ role: 'assistant', content: 'مقدرتش أرد دلوقتي: ' + (e.message || 'مشكلة'), error: true });
@@ -1043,9 +1075,24 @@
       upsertClient(c);
       return 'تمام، اتضاف العميل «' + c.name + '».';
     }
+    if (d.type === 'visit') {
+      const c = S.cmap.get(x.client_id);
+      if (!c) throw new Error('العميل مش محدد. قولّي اسمه الأول');
+      if (!KINDS[x.kind] || !x.description || !x.description.trim()) throw new Error('نوع الزيارة ووصفها مطلوبين');
+      const when = x.at ? new Date(x.at) : new Date();
+      if (!Number.isFinite(when.getTime()) || when.getTime() > Date.now() + 5 * 60000) throw new Error('تاريخ الزيارة مش واضح أو لسه في المستقبل');
+      const v = await api.saveVisit({
+        client_id: c.id, status: 'done', kind: x.kind, at: when.toISOString(),
+        description: x.description.trim(), problem: x.problem || null, cause: x.cause || null,
+        resolution: x.resolution || null, resolved: x.resolved === true,
+        notes: x.notes || null
+      });
+      upsertVisit(v);
+      return 'اتسجلت الزيارة عند «' + c.name + '» بنجاح.';
+    }
     if (d.type === 'appointment') {
       let c = S.cmap.get(x.client_id);
-      if (!c && x.client_name) c = S.clients.find(k => k.name.includes(x.client_name) || x.client_name.includes(k.name));
+      if (!c && x.client_name) { const matches = S.clients.filter(k => k.name === x.client_name); if (matches.length === 1) c = matches[0]; }
       if (!c) throw new Error('العميل مش موجود. ضيفه الأول');
       const at = new Date(x.at);
       if (isNaN(at)) throw new Error('الوقت مش واضح');
