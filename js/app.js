@@ -751,6 +751,8 @@
      ===================================================== */
   const CHAT_KEY = 'yaqoub_layla_chat';
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const CAN_RECORD = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  let activeRecording = null;
   function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch (e) { return []; } }
   function saveChat() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch (e) { /* تجاهل */ } }
 
@@ -929,7 +931,7 @@
       html: '<div id="chat" class="chat"></div>' +
         '<div class="composer"><div class="qchips">' + chips.map(c => '<button type="button" data-act="quickchat" data-t="' + esc(c) + '">' + esc(c) + '</button>').join('') + '</div>' +
         '<div class="cbox"><textarea id="cin" rows="1" placeholder="اسأل ليلة، أو قولها تضيف عميل أو ميعاد" aria-label="رسالة"></textarea>' +
-        (SR ? '<button type="button" class="ib" data-act="mic" aria-label="تسجيل صوتي">' + icon('mic') + '</button>' : '') +
+        (SR || CAN_RECORD ? '<button type="button" class="ib" data-act="mic" aria-label="تسجيل صوتي">' + icon('mic') + '</button>' : '') +
         '<button type="button" class="send" data-act="sendchat" aria-label="إرسال">' + icon('send') + '</button></div></div>',
       after() {
         renderChat();
@@ -1787,11 +1789,52 @@
       if (!d || d.state !== 'new') return;
       d.state = 'no'; saveChat(); renderChat();
     },
-    mic(el) {
-      if (!SR) return toast('الميكروفون مش مدعوم هنا. استخدم ميكروفون الكيبورد');
+    async mic(el) {
+      if (activeRecording) {
+        activeRecording.stop();
+        return;
+      }
+      // iOS Safari/PWA supports MediaRecorder, but not Web SpeechRecognition.
+      if (CAN_RECORD) {
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+          const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+          const chunks = [];
+          let completed = false;
+          const cleanup = () => { stream.getTracks().forEach(t => t.stop()); el.classList.remove('rec'); activeRecording = null; };
+          recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+          recorder.onerror = () => { cleanup(); toast('حصلت مشكلة في التسجيل', 'err'); };
+          recorder.onstop = async () => {
+            if (completed) return;
+            completed = true;
+            cleanup();
+            if (!chunks.length) return toast('التسجيل فاضي', 'err');
+            try {
+              el.disabled = true;
+              const audio = new Blob(chunks, { type: recorder.mimeType || chunks[0].type });
+              const text = await api.transcribeAudio(audio);
+              const input = $('#cin');
+              if (input) { input.value = (input.value ? input.value + ' ' : '') + text; input.dispatchEvent(new Event('input')); input.focus(); }
+            } catch (err) { toast(err.message || 'تعذر تحويل الصوت لنص', 'err'); }
+            finally { el.disabled = false; }
+          };
+          activeRecording = recorder;
+          recorder.start();
+          el.classList.add('rec');
+          // Limit duration to protect data usage and the transcription provider.
+          setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 60000);
+        } catch (err) {
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          toast('اسمح باستخدام الميكروفون من إعدادات المتصفح', 'err');
+        }
+        return;
+      }
+      if (!SR) return toast('الميكروفون مش مدعوم هنا');
       const r = new SR();
       r.lang = 'ar-SA'; r.interimResults = false;
-      r.onresult = e => { const t = $('#cin'); t.value = (t.value ? t.value + ' ' : '') + e.results[0][0].transcript; t.focus(); };
+      r.onresult = e => { const t = $('#cin'); if (t) { t.value = (t.value ? t.value + ' ' : '') + e.results[0][0].transcript; t.focus(); } };
       r.onerror = () => toast('مسمعتش حاجة، جرّب تاني', 'err');
       r.onend = () => el.classList.remove('rec');
       el.classList.add('rec'); r.start();
