@@ -753,6 +753,12 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const CAN_RECORD = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
   let activeRecording = null;
+  let wakeRecognizer = null;
+  let wakeEnabled = false;
+  let wakeStarted = false;
+  let voicePanelOpen = false;
+  let voiceRequest = false;
+  let wakeRestartTimer = null;
   function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch (e) { return []; } }
   function saveChat() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch (e) { /* تجاهل */ } }
 
@@ -859,6 +865,135 @@
     window.scrollTo(0, document.body.scrollHeight);
   }
 
+  // Foreground wake-word support; only active while the signed-in app is visible.
+  const voiceStateKey = 'yaqoub_wake_enabled';
+  function voiceStatus(message) {
+    const el = document.getElementById('layla-voice-status');
+    if (el) el.textContent = message;
+  }
+  function voicePanel() {
+    let el = document.getElementById('layla-global-panel');
+    if (!el) {
+      el = document.createElement('section');
+      el.id = 'layla-global-panel';
+      el.className = 'layla-global-panel';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', 'مساعد ليلة الصوتي');
+      el.innerHTML = '<div class="layla-global-header"><b>ليلة — مساعدك</b><button type="button" data-act="global-close" aria-label="إغلاق">×</button></div>' +
+        '<p id="layla-voice-status" aria-live="polite">اسأليني عن العملاء والمواعيد والزيارات</p>' +
+        '<p id="layla-voice-answer" class="layla-voice-answer" aria-live="polite"></p>' +
+        '<div class="layla-global-input"><input id="layla-global-text" placeholder="اكتب أو سجّل سؤالك" aria-label="سؤال إلى ليلة">' +
+        '<button type="button" data-act="global-mic" id="layla-global-mic" aria-label="تسجيل السؤال">🎤</button>' +
+        '<button type="button" data-act="global-send">إرسال</button></div>' +
+        '<label class="layla-wake-toggle"><input id="layla-wake-check" type="checkbox"> تفعيل «يا ليلة» أثناء فتح التطبيق</label>';
+      document.body.appendChild(el);
+      el.querySelector('#layla-wake-check').checked = wakeEnabled;
+      el.querySelector('#layla-wake-check').addEventListener('change', ev => setWakeEnabled(ev.target.checked));
+      el.querySelector('#layla-global-text').addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); askGlobal(); }
+      });
+    }
+    return el;
+  }
+  function openGlobalVoice() {
+    if (!S.user) return;
+    voicePanelOpen = true;
+    voicePanel().classList.add('open');
+    voiceStatus(wakeEnabled ? 'قول «يا ليلة» وبعدها سؤالك' : 'اسألني عن العملاء والمواعيد والزيارات');
+  }
+  function closeGlobalVoice() {
+    voicePanelOpen = false;
+    const panel = document.getElementById('layla-global-panel');
+    if (panel) panel.classList.remove('open');
+    if (window.speechSynthesis) speechSynthesis.cancel();
+  }
+  function speakLayla(text) {
+    if (!window.speechSynthesis || !text || document.visibilityState !== 'visible') return;
+    try {
+      speechSynthesis.cancel();
+      const msg = new SpeechSynthesisUtterance(String(text).replace(/[*#_]/g, ' ').slice(0, 1400));
+      msg.lang = 'ar-SA'; msg.rate = 1;
+      speechSynthesis.speak(msg);
+    } catch (_) { /* Some browsers require a direct user gesture. */ }
+  }
+  function askGlobal(value) {
+    const input = document.getElementById('layla-global-text');
+    const question = String(value || (input && input.value) || '').trim();
+    if (!question || S.chatBusy) return;
+    openGlobalVoice();
+    if (input) input.value = '';
+    voiceRequest = true;
+    voiceStatus('ليلة بتدور على الإجابة...');
+    return sendChat(question);
+  }
+  function stopWake() {
+    if (wakeRestartTimer) { clearTimeout(wakeRestartTimer); wakeRestartTimer = null; }
+    wakeStarted = false;
+    if (wakeRecognizer) {
+      const recognizer = wakeRecognizer;
+      wakeRecognizer = null;
+      recognizer.onend = null;
+      try { recognizer.abort(); } catch (_) {}
+    }
+  }
+  function setWakeEnabled(enabled) {
+    wakeEnabled = Boolean(enabled);
+    try { localStorage.setItem(voiceStateKey, wakeEnabled ? '1' : '0'); } catch (_) {}
+    const toggle = document.getElementById('layla-wake-check');
+    if (toggle) toggle.checked = wakeEnabled;
+    if (!wakeEnabled) { stopWake(); voiceStatus('الاستماع لعبارة «يا ليلة» متوقف'); return; }
+    if (!SR) {
+      wakeEnabled = false;
+      if (toggle) toggle.checked = false;
+      try { localStorage.removeItem(voiceStateKey); } catch (_) {}
+      return voiceStatus('المتصفح ده لا يدعم الاستدعاء الصوتي المستمر. استخدم زر المايك.');
+    }
+    startWake();
+  }
+  function startWake() {
+    if (!wakeEnabled || !S.user || !SR || wakeStarted || activeRecording || document.visibilityState !== 'visible') return;
+    try {
+      const r = new SR();
+      r.lang = 'ar-SA';
+      r.continuous = true;
+      r.interimResults = false;
+      wakeRecognizer = r;
+      wakeStarted = true;
+      r.onresult = ev => {
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          if (!ev.results[i].isFinal) continue;
+          const heard = ev.results[i][0].transcript.trim();
+          const match = heard.match(/(?:يا\s*ليلة|يا\s*ليلى|hey\s*layla)/i);
+          if (!match) continue;
+          openGlobalVoice();
+          const question = heard.slice(match.index + match[0].length).replace(/^[،,\s]+/, '').trim();
+          if (question) askGlobal(question);
+          else voiceStatus('سمعاك، قول سؤالك أو اضغط المايك');
+          break;
+        }
+      };
+      r.onerror = ev => {
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+          wakeEnabled = false;
+          try { localStorage.removeItem(voiceStateKey); } catch (_) {}
+          voiceStatus('إذن الميكروفون مرفوض. فعّله من إعدادات المتصفح.');
+        }
+      };
+      r.onend = () => {
+        if (wakeRecognizer !== r) return;
+        wakeStarted = false;
+        wakeRecognizer = null;
+        if (wakeEnabled && S.user && document.visibilityState === 'visible')
+          wakeRestartTimer = setTimeout(startWake, 2500);
+      };
+      r.start();
+    } catch (e) {
+      wakeStarted = false;
+      wakeRecognizer = null;
+      voiceStatus('تعذر تفعيل الاستدعاء الصوتي. استخدم زر المايك.');
+    }
+  }
+
   async function sendChat(text) {
     text = (text || '').trim();
     if (!text || S.chatBusy) return;
@@ -872,6 +1007,15 @@
       S.chat.push({ role: 'assistant', content: 'مقدرتش أرد دلوقتي: ' + (e.message || 'مشكلة'), error: true });
     }
     S.chatBusy = false; saveChat(); renderChat();
+    if (voiceRequest) {
+      voiceRequest = false;
+      const last = S.chat[S.chat.length - 1];
+      const answer = last && last.content || 'مفيش رد متاح';
+      const area = document.getElementById('layla-voice-answer');
+      if (area) area.textContent = answer;
+      voiceStatus(last && last.error ? 'حصلت مشكلة في الإجابة' : 'ليلة ردت عليك');
+      if (last && !last.error) speakLayla(answer);
+    }
   }
 
   async function applyDraft(d) {
@@ -1769,6 +1913,10 @@
     prio(el) { F.priority = el.dataset.v; syncForm(); },
 
     /* ---- ليلة ---- */
+    'global-open'() { openGlobalVoice(); },
+    'global-close'() { closeGlobalVoice(); },
+    'global-send'() { return askGlobal(); },
+    'global-mic'(el) { openGlobalVoice(); return ACT.mic(el); },
     sendchat() { const t = $('#cin'); const v = t.value; t.value = ''; t.style.height = 'auto'; return sendChat(v); },
     quickchat(el) { return sendChat(el.dataset.t); },
     clearchat() {
@@ -1790,6 +1938,7 @@
       d.state = 'no'; saveChat(); renderChat();
     },
     async mic(el) {
+      if (wakeStarted) stopWake();
       if (activeRecording) {
         activeRecording.stop();
         return;
@@ -1815,8 +1964,10 @@
               el.disabled = true;
               const audio = new Blob(chunks, { type: recorder.mimeType || chunks[0].type });
               const text = await api.transcribeAudio(audio);
-              const input = $('#cin');
-              if (input) { input.value = (input.value ? input.value + ' ' : '') + text; input.dispatchEvent(new Event('input')); input.focus(); }
+              const isGlobal = el.id === 'layla-global-mic';
+              const input = isGlobal ? document.getElementById('layla-global-text') : $('#cin');
+              if (isGlobal) askGlobal(text);
+              else if (input) { input.value = (input.value ? input.value + ' ' : '') + text; input.dispatchEvent(new Event('input')); input.focus(); }
             } catch (err) { toast(err.message || 'تعذر تحويل الصوت لنص', 'err'); }
             finally { el.disabled = false; }
           };
@@ -1834,7 +1985,11 @@
       if (!SR) return toast('الميكروفون مش مدعوم هنا');
       const r = new SR();
       r.lang = 'ar-SA'; r.interimResults = false;
-      r.onresult = e => { const t = $('#cin'); if (t) { t.value = (t.value ? t.value + ' ' : '') + e.results[0][0].transcript; t.focus(); } };
+      r.onresult = e => {
+        const text = e.results[0][0].transcript;
+        if (el.id === 'layla-global-mic') askGlobal(text);
+        else { const t = $('#cin'); if (t) { t.value = (t.value ? t.value + ' ' : '') + text; t.focus(); } }
+      };
       r.onerror = () => toast('مسمعتش حاجة، جرّب تاني', 'err');
       r.onend = () => el.classList.remove('rec');
       el.classList.add('rec'); r.start();
@@ -2019,7 +2174,8 @@
       ? '<header class="bar"><button class="ib" data-act="back" aria-label="رجوع">' + icon('back') + '</button><h1>' + esc(o.title) + '</h1><span class="grow"></span>' + (o.topRight || '') + '</header>'
       : '<header class="bar brand"><img src="icons/logo.svg" alt=""><div class="brand-wrap"><h1>' + (o.title && name !== 'home' ? esc(o.title) : 'يعقوب') + '</h1><a class="brand-credit" href="https://nader-dev1.github.io/portoflio/" target="_blank" rel="noopener">Developed by Nader Elsayed</a></div><span class="grow"></span>' +
       '<a class="ib layla-ib" href="#/layla" aria-label="ليلة"><img src="icons/layla.svg" alt=""></a><a class="ib" href="#/settings" aria-label="الإعدادات">' + icon('gear') + '</a></header>';
-    return top + '<main class="' + (o.cls || '') + '">' + o.html + '</main>' + (o.nav === false ? '' : navHtml(name));
+    return top + '<main class="' + (o.cls || '') + '">' + o.html + '</main>' + (o.nav === false ? '' : navHtml(name)) +
+      (name === 'layla' ? '' : '<button type="button" class="layla-global-fab" data-act="global-open" aria-label="اسأل ليلة من أي صفحة"><img src="icons/layla.svg" alt=""> اسأل ليلة</button>');
   }
   let lastHash = '';
   function render() {
@@ -2074,6 +2230,7 @@
     }
     if (!location.hash) location.hash = '#/home';
     render();
+    if (wakeEnabled) startWake();
     syncPushQuietly();
   }
 
@@ -2085,7 +2242,7 @@
       navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.go) go(e.data.go); });
     }
     if (!api || !api.configured) return showSetup();
-    api.onSignedOut(() => { S.user = null; showLogin(); });
+    api.onSignedOut(() => { S.user = null; stopWake(); closeGlobalVoice(); showLogin(); });
 
     // العمل بدون نت: مؤشر + إعادة تحميل بعد الرفع
     if (api.bindLookup) {
@@ -2110,6 +2267,8 @@
 
     // تحديث هادي لما ترجع للتطبيق، وتحديث التنبيهات كل دقيقة
     document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState !== 'visible') stopWake();
+      else if (wakeEnabled && S.user) startWake();
       if (document.visibilityState !== 'visible' || !S.user || Date.now() - S.loadedAt < 90000) return;
       try { await loadData(); if (route().parts[0] !== 'form') render(); } catch (e) { /* تجاهل */ }
     });
@@ -2118,6 +2277,8 @@
       if (S.user && (n === 'home' || n === 'appts') && !sheetEl.classList.contains('open')) render();
     }, 60000);
 
+    // Wake mode is opt-in. Never start recording before a signed-in session.
+    try { wakeEnabled = localStorage.getItem(voiceStateKey) === '1'; } catch (_) {}
     const sess = await api.session();
     if (!sess) return showLogin();
     await start(sess);
