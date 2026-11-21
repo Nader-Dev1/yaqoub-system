@@ -759,6 +759,7 @@
   let voicePanelOpen = false;
   let voiceRequest = false;
   let wakeRestartTimer = null;
+  let wakeAwaitingQuestion = false;
   function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch (e) { return []; } }
   function saveChat() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch (e) { /* تجاهل */ } }
 
@@ -923,6 +924,8 @@
     openGlobalVoice();
     if (input) input.value = '';
     voiceRequest = true;
+    wakeAwaitingQuestion = false;
+    stopWake(); // Prevent interpreting Layla's spoken reply as a new request.
     voiceStatus('ليلة بتدور على الإجابة...');
     return sendChat(question);
   }
@@ -941,7 +944,7 @@
     try { localStorage.setItem(voiceStateKey, wakeEnabled ? '1' : '0'); } catch (_) {}
     const toggle = document.getElementById('layla-wake-check');
     if (toggle) toggle.checked = wakeEnabled;
-    if (!wakeEnabled) { stopWake(); voiceStatus('الاستماع لعبارة «يا ليلة» متوقف'); return; }
+    if (!wakeEnabled) { wakeAwaitingQuestion = false; stopWake(); voiceStatus('الاستماع لعبارة «يا ليلة» متوقف'); return; }
     if (!SR) {
       wakeEnabled = false;
       if (toggle) toggle.checked = false;
@@ -964,11 +967,14 @@
           if (!ev.results[i].isFinal) continue;
           const heard = ev.results[i][0].transcript.trim();
           const match = heard.match(/(?:يا\s*ليلة|يا\s*ليلى|hey\s*layla)/i);
-          if (!match) continue;
+          if (!match) {
+            if (wakeAwaitingQuestion && heard) { wakeAwaitingQuestion = false; askGlobal(heard); }
+            continue;
+          }
           openGlobalVoice();
           const question = heard.slice(match.index + match[0].length).replace(/^[،,\s]+/, '').trim();
           if (question) askGlobal(question);
-          else voiceStatus('سمعاك، قول سؤالك أو اضغط المايك');
+          else { wakeAwaitingQuestion = true; voiceStatus('سمعاك، قول سؤالك أو اضغط المايك'); }
           break;
         }
       };
@@ -1015,6 +1021,7 @@
       if (area) area.textContent = answer;
       voiceStatus(last && last.error ? 'حصلت مشكلة في الإجابة' : 'ليلة ردت عليك');
       if (last && !last.error) speakLayla(answer);
+      if (wakeEnabled && !wakeStarted) wakeRestartTimer = setTimeout(startWake, 3000);
     }
   }
 
