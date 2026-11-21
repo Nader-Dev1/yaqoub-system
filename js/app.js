@@ -760,8 +760,13 @@
   let voiceRequest = false;
   let wakeRestartTimer = null;
   let wakeAwaitingQuestion = false;
-  function loadChat() { try { return JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch (e) { return []; } }
-  function saveChat() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(S.chat.slice(-40))); } catch (e) { /* تجاهل */ } }
+  // Chats are intentionally ephemeral: never persist dialogue in LocalStorage or Supabase.
+  // Remove data left by earlier versions (including legacy session storage copies).
+  function clearLegacyChat() {
+    try { localStorage.removeItem(CHAT_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(CHAT_KEY); } catch (_) {}
+  }
+  function saveChat() { /* In-memory conversation only; cleared on reload and sign-out. */ }
 
   // زيارات تمت وناقص فيها وصف اللي اتعمل
   function missingDetails(v) {
@@ -1012,7 +1017,9 @@
       console.error(e);
       S.chat.push({ role: 'assistant', content: 'مقدرتش أرد دلوقتي: ' + (e.message || 'مشكلة'), error: true });
     }
-    S.chatBusy = false; saveChat(); renderChat();
+    S.chatBusy = false;
+    if (S.chat.length > 32) S.chat.splice(0, S.chat.length - 32); // Bound RAM usage.
+    renderChat();
     if (voiceRequest) {
       voiceRequest = false;
       const last = S.chat[S.chat.length - 1];
@@ -2226,7 +2233,8 @@
   }
   async function start(sess) {
     S.user = sess.user;
-    S.chat = loadChat();
+    clearLegacyChat();
+    S.chat = []; // A new session always starts with no chat history.
     appEl.innerHTML = '<div class="splash"><img src="icons/logo.svg" alt=""></div>';
     try {
       await loadData();
@@ -2249,7 +2257,7 @@
       navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.go) go(e.data.go); });
     }
     if (!api || !api.configured) return showSetup();
-    api.onSignedOut(() => { S.user = null; stopWake(); closeGlobalVoice(); showLogin(); });
+    api.onSignedOut(() => { S.user = null; S.chat = []; clearLegacyChat(); stopWake(); closeGlobalVoice(); showLogin(); });
 
     // العمل بدون نت: مؤشر + إعادة تحميل بعد الرفع
     if (api.bindLookup) {
