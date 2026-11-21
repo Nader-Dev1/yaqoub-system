@@ -343,7 +343,7 @@ function openaiChat(history: any[]): Chat {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env('LLM_API_KEY') },
         body: JSON.stringify({
-          model: env('LLM_MODEL') || 'llama-3.3-70b-versatile',
+          model: env('LLM_MODEL') || 'openai/gpt-oss-120b',
           messages: [{ role: 'system', content: system }, ...msgs],
           tools: TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })),
           max_tokens: 1500,
@@ -362,16 +362,40 @@ function openaiChat(history: any[]): Chat {
   };
 }
 
-function makeChat(history: any[]): Chat {
-  if (PROVIDER === 'anthropic') return anthropicChat(history);
-  if (PROVIDER === 'openai') return openaiChat(history);
+type Provider = 'gemini' | 'openai' | 'anthropic';
+const providerKeys: Record<Provider, string> = { gemini: 'GEMINI_API_KEY', openai: 'LLM_API_KEY', anthropic: 'ANTHROPIC_API_KEY' };
+function availableProviders(): Provider[] {
+  const order: Provider[] = ['gemini', 'openai', 'anthropic'];
+  const preferred = (PROVIDER === 'openai' || PROVIDER === 'anthropic' || PROVIDER === 'gemini') ? PROVIDER as Provider : 'gemini';
+  return [preferred, ...order.filter(p => p !== preferred)].filter(p => !!env(providerKeys[p]));
+}
+function createProvider(p: Provider, history: any[]): Chat {
+  if (p === 'openai') return openaiChat(history);
+  if (p === 'anthropic') return anthropicChat(history);
   return geminiChat(history);
 }
+// Fail over only before any tool action has been executed. After tool results,
+// retaining the same provider avoids replaying state-changing tool calls.
+function makeChat(history: any[]): Chat {
+  const providers = availableProviders();
+  let index = 0, hasToolResults = false;
+  let active = createProvider(providers[index], history);
+  return {
+    async step(system) {
+      while (true) {
+        try { return await active.step(system); }
+        catch (error) {
+          console.error('layla provider failure', providers[index], (error as Error).message);
+          if (hasToolResults || index + 1 >= providers.length) throw new Error('AI providers failed: ' + providers[index] + ': ' + String((error as Error).message || error).slice(0, 120));
+          active = createProvider(providers[++index], history);
+        }
+      }
+    },
+    addResults(results) { hasToolResults = true; active.addResults(results); },
+  };
+}
 function missingKey(): string | null {
-  if (PROVIDER === 'anthropic' && !env('ANTHROPIC_API_KEY')) return 'ANTHROPIC_API_KEY';
-  if (PROVIDER === 'openai' && !env('LLM_API_KEY')) return 'LLM_API_KEY';
-  if (PROVIDER === 'gemini' && !env('GEMINI_API_KEY')) return 'GEMINI_API_KEY';
-  return null;
+  return availableProviders().length ? null : 'GEMINI_API_KEY أو LLM_API_KEY أو ANTHROPIC_API_KEY';
 }
 
 /* =========================================================
