@@ -133,6 +133,19 @@
       }
       return data;
     },
+    async transcribeAudio(blob) {
+      const data = new FormData();
+      const extension = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm';
+      data.append('file', blob, 'recording.' + extension);
+      const { data: result, error } = await sb.functions.invoke('layla-transcribe', { body: data });
+      if (error) {
+        let message = error.message;
+        try { const j = await error.context.json(); message = j.error || message; } catch (_) { /* ignore */ }
+        throw new Error(message);
+      }
+      if (!result || !result.text) throw new Error('مفيش كلام واضح في التسجيل');
+      return result.text;
+    },
     async listMemory() {
       return must(await sb.from('layla_memory').select('id,fact,created_at').order('created_at', { ascending: false }).limit(100));
     },
