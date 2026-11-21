@@ -1020,8 +1020,8 @@
       let message = r.reply || '...';
       // Only execute a single complete, unambiguous write requested explicitly.
       // Generic chat replies and read-only queries never trigger database writes.
-      const explicitWrite = /(?:^|\\s)(?:سجل(?:ي|ه|ها)?|سجّل(?:ي|ه|ها)?|ضيف(?:ي|ه|ها)?|اضيف(?:ي|ه|ها)?|أضيف(?:ي|ه|ها)?|اضف|أضف|احفظ(?:ي|ه|ها)?|خلي(?:ها)?\\s+مسجلة|حدّث(?:ي)?|حدث(?:ي)?|عدّل(?:ي)?|عدل(?:ي)?)(?:\\s|$)/i.test(text)
-        && !/(?:ما\\s*تسجل|متسجل|ما\\s*تضيف|ما\\s*تحفظ|بلاش\\s*تسجل|بدون\\s*تسجيل)/i.test(text);
+      const explicitWrite = /(?:^|\s)(?:سجل(?:ي|ه|ها)?|سجّل(?:ي|ه|ها)?|ضيف(?:ي|ه|ها)?|اضيف(?:ي|ه|ها)?|أضيف(?:ي|ه|ها)?|اضف|أضف|احفظ(?:ي|ه|ها)?|خلي(?:ها)?\s+مسجلة|حدّث(?:ي)?|حدث(?:ي)?|عدّل(?:ي)?|عدل(?:ي)?)(?:\s|$)/i.test(text)
+        && !/(?:ما\s*تسجل|متسجل|ما\s*تضيف|ما\s*تحفظ|بلاش\s*تسجل|بدون\s*تسجيل)/i.test(text);
       if (explicitWrite && drafts.length === 1) {
         const d = drafts[0];
         const x = d.data || {};
